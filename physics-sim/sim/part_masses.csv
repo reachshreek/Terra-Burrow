@@ -1,0 +1,74 @@
+bom_id,sim_body,qty,mass_each_g,mirror_y,x_mm,y_mm,z_mm,size_x_mm,size_y_mm,size_z_mm,mass_source,when
+HAL2-001,torso,2,85,yes,-70,40,-15,45,25,35,estimate - Waveshare does not list weight,
+HAL2-002,torso,1,15,no,0,0,35,65,30,10,estimate,
+HAL2-003,rear_thigh_*,1,6,no,0,0,0,0,0,0,estimate,
+HAL2-004,torso,1,20,no,-20,0,20,0,0,0,estimate,
+HAL2-005,rear_thigh_*,1,12,no,0,0,-20,0,0,0,estimate - spring size not selected yet,drive=servo
+HAL2-005,rear_thigh_*,1,25,no,0,0,-20,0,0,0,estimate - stiffer latch-drive spring,drive=latch
+HAL2-006,torso,1,15,no,-80,0,-30,0,0,0,estimate,
+HAL2-007,torso,1,4,no,20,0,35,51,21,4,estimate,
+HAL2-008,torso,1,3,no,0,0,20,0,0,0,estimate,
+HAL2-009,rear_shin_*,1,3,no,0,0,-65,0,0,0,estimate,
+HAL2-010,torso,2,3,yes,-80,30,-30,0,0,0,estimate,
+HAL2-011,torso,1,9,no,60,0,30,62,25,4,estimate,
+HAL2-012,torso,1,3,no,10,0,30,0,0,0,estimate,
+HAL2-013,torso,1,10,no,10,0,25,0,0,0,estimate,
+HAL2-014,torso,1,15,no,0,0,25,0,0,0,estimate,
+HAL2-015,torso,3,13,no,120,0,40,0,0,0,estimate - head expression servos,
+HAL2-016,torso,1,185,no,0,0,-15,105,34,25,estimate - typical 3S 2200mAh pack,power=battery
+HAL2-017,off_robot,1,0,no,0,0,0,0,0,0,charger stays off the robot,
+HAL2-018,off_robot,1,0,no,0,0,0,0,0,0,storage pouch,
+HAL2-019,torso,1,8,no,-30,0,30,0,0,0,estimate,power=battery
+HAL2-020,torso,1,35,no,-40,0,10,0,0,0,estimate - depends on contactor chosen,power=battery
+HAL2-021,torso,1,60,no,-40,0,55,0,0,0,estimate - 22mm industrial e-stop on the back,power=battery
+HAL2-022,torso,1,10,no,-30,0,0,0,0,0,estimate,
+HAL2-023,off_robot,1,0,no,0,0,0,0,0,0,spare fuses,
+HAL2-024,torso,1,10,no,-20,0,-10,0,0,0,estimate,
+HAL2-025,torso,1,30,no,0,0,10,0,0,0,estimate - on-robot portion of the wire,
+HAL2-026,torso,1,20,no,-10,0,15,0,0,0,estimate,
+HAL2-027,torso,1,5,no,0,0,10,0,0,0,estimate,
+HAL2-028,torso,1,260,no,0,0,0,260,120,100,estimate - printed body shell,
+HAL2-028,rear_thigh_*,1,30,no,0,0,-35,20,15,70,estimate - printed thigh,
+HAL2-028,rear_shin_*,1,20,no,0,0,-35,15,12,70,estimate - printed shin,
+HAL2-028,front_leg_*,1,20,no,0,0,-25,15,15,50,estimate - printed foreleg,
+HAL2-029,torso,1,40,no,0,0,-40,0,0,0,estimate,
+HAL2-030,torso,2,16,yes,-80,55,-30,0,0,0,estimate - 8mm steel hip shafts,
+HAL2-030,rear_thigh_*,1,16,no,0,0,-70,0,0,0,estimate - 8mm steel knee shaft,
+HAL2-031,torso,4,6,yes,-80,50,-30,0,0,0,estimate - hip bearings,
+HAL2-031,rear_thigh_*,2,6,no,0,0,-70,0,0,0,estimate - knee bearings,
+HAL2-032,torso,1,10,no,-80,0,-30,0,0,0,estimate,
+HAL2-033,torso,1,40,no,0,0,0,0,0,0,estimate,
+HAL2-034,torso,1,10,no,0,0,0,0,0,0,estimate,
+HAL2-035,rear_thigh_*,1,15,no,0,0,-15,0,0,0,estimate,
+HAL2-036,torso,1,15,no,0,0,-45,0,0,0,estimate,
+HAL2-037,front_leg_*,1,10,no,0,0,-10,0,0,0,estimate,drive=servo
+HAL2-038,torso,1,40,no,-40,0,-20,0,0,0,estimate,
+HAL2-039,rear_shin_*,1,5,no,0,0,-70,0,0,0,estimate,
+HAL2-039,front_leg_*,1,5,no,0,0,-45,0,0,0,estimate,
+HAL2-040,torso,1,5,no,0,0,0,0,0,0,estimate,
+HAL2-041,torso,1,120,no,0,0,0,280,130,110,estimate - fur covering,
+HAL2-042,torso,1,15,no,110,0,90,0,0,0,estimate - ears,
+HAL2-043,torso,1,5,no,150,0,50,0,0,0,estimate,
+HAL2-044,torso,1,15,no,0,0,0,0,0,0,estimate,
+HAL2-045,off_robot,2,0,no,0,0,0,0,0,0,test rig,
+HAL2-046,off_robot,2,0,no,0,0,0,0,0,0,test rig,
+HAL2-047,off_robot,1,0,no,0,0,0,0,0,0,test rig,
+HAL2-048,off_robot,1,0,no,0,0,0,0,0,0,test rig,
+HAL2-049,off_robot,1,0,no,0,0,0,0,0,0,test rig,
+HAL2-050,off_robot,1,0,no,0,0,0,0,0,0,test rig,
+HAL2-051,off_robot,1,0,no,0,0,0,0,0,0,test rig,
+HAL2-052,off_robot,1,0,no,0,0,0,0,0,0,tool,
+HAL2-053,off_robot,1,0,no,0,0,0,0,0,0,tool,
+HAL2-054,off_robot,1,0,no,0,0,0,0,0,0,tool,
+HAL2-055,off_robot,1,0,no,0,0,0,0,0,0,tool,
+HAL2-056,torso,2,13,yes,-60,35,0,0,0,0,proposed - MG90D latch release servo,drive=latch
+HAL2-057,torso,2,8,yes,-75,45,-25,0,0,0,proposed - steel ratchet pawl + sear,drive=latch
+HAL2-057,rear_thigh_*,1,10,no,0,0,0,0,0,0,proposed - steel ratchet sector at the hip,drive=latch
+HAL2-058,torso,2,6,yes,-70,30,-10,0,0,0,proposed - winder spool on servo horn + cord,drive=latch
+HAL2-058,rear_thigh_*,1,4,no,0,0,-28,0,0,0,proposed - cord anchor on thigh,drive=latch
+HAL2-059,front_leg_*,1,8,no,0,0,-10,0,0,0,proposed - mini RC shock absorber,drive=latch
+HAL2-060,torso,1,10,no,-135,0,0,0,0,0,proposed - tail breakaway power connector,power=tether
+HAL2-061,off_robot,1,0,no,0,0,0,0,0,0,proposed - 12V wall power supply,power=tether
+HAL2-062,off_robot,1,0,no,0,0,0,0,0,0,proposed - ground base enclosure + ballast,power=tether
+HAL2-063,off_robot,1,0,no,0,0,0,0,0,0,proposed - slip ring swivel,power=tether
+HAL2-064,off_robot,1,0,no,0,0,0,0,0,0,proposed - tether cable,power=tether
