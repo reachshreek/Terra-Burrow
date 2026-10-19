@@ -12,10 +12,10 @@ real-time motor control, sensor feedback, and jumping.
 flowchart TB
     %% Controllers
     RPI["Raspberry Pi (RPI)<br/>Computer Vision / AI / Planning"]
-    MCU["Microcontroller (MCU)<br/>Real-Time Jump Control"]
+    MCU["Raspbery Pi Pico (MCU)<br/>Real-Time Jump Control"]
 
     %% Power System
-    BAT["3S LiPo Battery"]
+    BAT["Gens Ace 3S 2200mAh 35C LiPo XT60 Battery"]
     PWR["Power Distribution<br/>Fuses / Regulators / E-Stop"]
 
     %% Actuators
@@ -27,10 +27,10 @@ flowchart TB
     EXPRESS["Ear / Face Servos"]
 
     %% Sensors
-    IMU["IMU - Orientation / Acceleration"]
-    LIMIT["Winding Limit Switches"]
-    LATCHSW["Latch Engagement Sensor"]
-    FOOT["Foot Contact Sensors"]
+    IMU["Adafruit MPU-6050 IMU"]
+    LIMIT["Pololu 1528 - Winding Limit Switches"]
+    LATCHSW["Pololu 1528 - Latch Engagement Sensor"]
+    FOOT["Pololu 1404 - Foot Contact Sensors"]
 
     %% Communication
     RPI <-->|USB / UART| MCU
