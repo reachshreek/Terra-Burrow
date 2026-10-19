@@ -9,69 +9,135 @@ real-time motor control, sensor feedback, and jumping.
 ## Electrical Architecture
 
 ```mermaid
+
 flowchart TB
-    %% Controllers
-    RPI["Raspberry Pi (RPI)<br/>Computer Vision / AI / Planning"]
-    MCU["Raspbery Pi Pico (MCU)<br/>Real-Time Jump Control"]
+    %% =========================
+    %% POWER SYSTEM
+    %% =========================
+    BAT["Gens Ace 3S 2200mAh 35C<br/>LiPo XT60 Battery"]
 
-    %% Power System
-    BAT["Gens Ace 3S 2200mAh 35C LiPo XT60 Battery"]
-    PWR["Power Distribution<br/>Fuses / Regulators / E-Stop"]
+    UV["Battery Undervoltage Cutoff<br/>Protection Circuit"]
 
-    %% Actuators
+    PD["Power Distribution<br/>(Wiring TBD)"]
+
+    REG1["Pololu 2851 Candidate<br/>5V 5A Computing Regulator"]
+
+    REG2["5V 5A Servo Regulator<br/>(Model TBD)"]
+
+    %% =========================
+    %% COMPUTING
+    %% =========================
+    RPI["Raspberry Pi 5 4GB<br/>Computer Vision / AI / Planning"]
+
+    MCU["Raspberry Pi Pico 2<br/>with Headers<br/>Real-Time Jump Control"]
+
+    SD["32GB microSD Card<br/>RPI Operating System"]
+
+    %% =========================
+    %% SENSORS
+    %% =========================
+    IMU["Adafruit LSM6DSO32<br/>6-DOF IMU"]
+
+    FOOT["Pololu 1404<br/>Foot Contact Switches x2"]
+
+    HOME["Pololu 1528<br/>Winding Home Switch(es)"]
+
+    LIMIT["Pololu 1528<br/>Fully Wound Limit Switch(es)"]
+
+    LATCHSW["Pololu 1528<br/>Latch Engaged Switch(es)"]
+
+    %% =========================
+    %% SAFETY
+    %% =========================
+    ARM["<br/>Independent Latch Release<br/>Arming Switch"]
+
+    %% =========================
+    %% ACTUATORS - TBD
+    %% =========================
     DRIVER["Winding Motor Driver(s)"]
-    WIND["1-2 Rear-Leg Winding Motors"]
-    LATCHDRV["Latch Release Driver"]
-    LATCH["Latch Release Servo / Solenoid"]
-    FRONT["Optional Front-Leg Actuators x2"]
+
+    WIND["1-2 Rear-Leg<br/>Winding Motors"]
+
+    LATCHDRV["Latch Release<br/>Driver / Interface"]
+
+    LATCH["Latch Release<br/>Servo / Solenoid"]
+
+    FRONTDRV["Front-Leg Actuator<br/>Driver / Interface"]
+
+    FRONT["Optional Front-Leg<br/>Actuators x2"]
+
     EXPRESS["Ear / Face Servos"]
 
-    %% Sensors
-    IMU["Adafruit MPU-6050 IMU"]
-    LIMIT["Pololu 1528 - Winding Limit Switches"]
-    LATCHSW["Pololu 1528 - Latch Engagement Sensor"]
-    FOOT["Pololu 1404 - Foot Contact Sensors"]
+    %% =========================
+    %% POWER CONNECTIONS
+    %% =========================
+    BAT --> UV
+    UV --> PD
 
-    %% Communication
-    RPI <-->|USB / UART| MCU
+    PD --> REG1
+    REG1 --> RPI
 
-    %% Power Connections
-    BAT --> PWR
-    PWR --> RPI
-    PWR --> MCU
-    PWR --> DRIVER
-    PWR --> LATCHDRV
-    PWR --> FRONT
-    PWR --> EXPRESS
+    PD --> REG2
+    REG2 --> EXPRESS
 
-    %% Motor Control
-    MCU -->|Motor Commands| DRIVER
+    PD --> DRIVER
+    PD --> FRONTDRV
+
+    REG2 -.->|"If 5V Servo Latch"| LATCHDRV
+    PD -.->|"If Solenoid - Matched Supply"| LATCHDRV
+
+    %% =========================
+    %% COMPUTER COMMUNICATION
+    %% =========================
+    SD -.->|"OS / Storage"| RPI
+
+    RPI <-->|"USB Serial + Pico Power"| MCU
+
+    %% =========================
+    %% SENSOR CONNECTIONS
+    %% =========================
+    IMU -->|"I2C"| MCU
+
+    FOOT -->|"Digital GPIO"| MCU
+
+    HOME -->|"Digital GPIO"| MCU
+
+    LIMIT -->|"Digital GPIO"| MCU
+
+    LATCHSW -->|"Digital GPIO"| MCU
+
+    %% =========================
+    %% ACTUATOR CONTROL
+    %% =========================
+    MCU -->|"Motor Commands"| DRIVER
     DRIVER --> WIND
 
-    %% Latch Control
-    MCU -->|Release Command| LATCHDRV
+    MCU -->|"Release Command"| LATCHDRV
+    ARM -->|"Hardware Release Enable"| LATCHDRV
     LATCHDRV --> LATCH
 
-    %% Other Actuation
-    MCU -->|Position Commands| FRONT
-    MCU -->|PWM Signals| EXPRESS
+    MCU -->|"Position Commands"| FRONTDRV
+    FRONTDRV --> FRONT
 
-    %% Sensor Feedback
-    IMU -->|I2C| MCU
-    LIMIT -->|Digital Inputs| MCU
-    LATCHSW -->|Digital Input| MCU
-    FOOT -->|Digital Inputs| MCU
+    MCU -->|"PWM Signals"| EXPRESS
 
-    %% Styling
+    %% =========================
+    %% COLOR STYLING
+    %% =========================
     classDef computer fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
     classDef power fill:#fef3c7,stroke:#d97706,color:#78350f
     classDef actuator fill:#dcfce7,stroke:#16a34a,color:#14532d
     classDef sensor fill:#f3e8ff,stroke:#9333ea,color:#581c87
+    classDef safety fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    classDef pending fill:#e5e7eb,stroke:#6b7280,color:#374151
 
-    class RPI,MCU computer
-    class BAT,PWR power
-    class DRIVER,WIND,LATCHDRV,LATCH,FRONT,EXPRESS actuator
-    class IMU,LIMIT,LATCHSW,FOOT sensor
+    class RPI,MCU,SD computer
+    class BAT,UV,REG1,REG2 power
+    class IMU,FOOT,HOME,LIMIT,LATCHSW sensor
+    class ARM safety
+    class DRIVER,WIND,LATCHDRV,LATCH,FRONTDRV,FRONT,EXPRESS actuator
+    class PD pending
+
 ```
 
 ## System Components
