@@ -18,18 +18,18 @@ flowchart TB
 
     UV["Battery Undervoltage Cutoff<br/>Protection Circuit"]
 
-    PD["Power Distribution<br/>(Wiring TBD)"]
+    PD["Power Distribution"]
 
-    REG1["Pololu 2851 Candidate<br/>5V 5A Computing Regulator"]
+    REG1["Pololu 2851<br/>5V 5A Computing Regulator"]
 
     REG2["5V 5A Servo Regulator<br/>(Model TBD)"]
 
     %% =========================
     %% COMPUTING
     %% =========================
-    RPI["Raspberry Pi 5 4GB<br/>Computer Vision / AI / Planning"]
+    RPI["Raspberry Pi 5 4GB<br/>CV/AI/Planning"]
 
-    MCU["Raspberry Pi Pico 2<br/>with Headers<br/>Real-Time Jump Control"]
+    MCU["Raspberry Pi Pico 2<br/>Real-Time Jump Control"]
 
     SD["32GB microSD Card<br/>RPI Operating System"]
 
@@ -40,16 +40,16 @@ flowchart TB
 
     FOOT["Pololu 1404<br/>Foot Contact Switches x2"]
 
-    HOME["Pololu 1528<br/>Winding Home Switch(es)"]
+    HOME["Pololu 1528<br/>Winding Home Switch"]
 
-    LIMIT["Pololu 1528<br/>Fully Wound Limit Switch(es)"]
+    LIMIT["Pololu 1528<br/>Fully Wound Limit Switch"]
 
-    LATCHSW["Pololu 1528<br/>Latch Engaged Switch(es)"]
+    LATCHSW["Pololu 1528<br/>Latch Engaged Switch"]
 
     %% =========================
     %% SAFETY
     %% =========================
-    ARM["<br/>Independent Latch Release<br/>Arming Switch"]
+    ARM["Independent Latch Release<br/>Arming Switch"]
 
     %% =========================
     %% ACTUATORS - TBD
