@@ -75,7 +75,7 @@ def random_uncertainty(rng):
     )
 
 
-def make_uncertain_bunny(design_name, u: Uncertainty):
+def make_uncertain_bunny(design_name, u: Uncertainty, sensor_seed=0):
     model = mujoco.MjModel.from_xml_path(str(model_path(design_name)))
     design = DESIGNS[design_name]
 
@@ -99,6 +99,7 @@ def make_uncertain_bunny(design_name, u: Uncertainty):
         model=model,
         servo_left=servo_from_design(design, u.servo_strength_left, u.servo_speed_left),
         servo_right=servo_from_design(design, u.servo_strength_right, u.servo_speed_right),
+        sensor_seed=sensor_seed,  # IMU noise, bias and mounting error, for designs that use the IMU
     )
 
 
@@ -110,7 +111,7 @@ def run_trial(job):
     design_name, command, seed = job
     rng = np.random.default_rng(seed)
     u = random_uncertainty(rng)
-    bunny = make_uncertain_bunny(design_name, u)
+    bunny = make_uncertain_bunny(design_name, u, sensor_seed=seed)
     bunny.reset_to_crouch()
 
     jittered = HopCommand(command.push_left, command.push_right,

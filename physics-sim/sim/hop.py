@@ -20,6 +20,7 @@ import mujoco
 import numpy as np
 
 from config import DESIGNS, model_path
+from front_legs import FrontLegs
 from legs import make_leg, winding_report
 from servo import servo_from_design
 
@@ -60,9 +61,9 @@ class HopResult:
 
 
 class Bunny:
-    """The MuJoCo model plus the two rear-leg drivers."""
+    """The MuJoCo model plus the two rear-leg drivers (and the front legs, if driven)."""
 
-    def __init__(self, design_name="bom", model=None, servo_left=None, servo_right=None):
+    def __init__(self, design_name="bom", model=None, servo_left=None, servo_right=None, sensor_seed=0):
         design = DESIGNS[design_name]
         self.design = design
         self.model = model if model is not None else mujoco.MjModel.from_xml_path(str(model_path(design_name)))
@@ -72,6 +73,8 @@ class Bunny:
             "right": servo_right or servo_from_design(design),
         }
         self.legs = {side: make_leg(design, self.servos[side]) for side in SIDES}
+        self.sensor_seed = sensor_seed
+        self.front = self.make_front_legs()
 
         def name_id(kind, name):
             return mujoco.mj_name2id(self.model, kind, name)
@@ -111,6 +114,12 @@ class Bunny:
         mujoco.mj_resetDataKeyframe(self.model, self.data, 0)
         mujoco.mj_forward(self.model, self.data)
         self.legs = {side: make_leg(self.design, self.servos[side]) for side in SIDES}
+        self.front = self.make_front_legs()
+
+    def make_front_legs(self):
+        if self.design.front_drive != "servo":
+            return None
+        return FrontLegs(self.design, self.model, self.data, rng=np.random.default_rng(self.sensor_seed))
 
     def torso_position(self):
         return self.data.xpos[self.torso].copy()
@@ -151,6 +160,8 @@ class Bunny:
                 constraint = self.latch_constraint[side]
                 self.model.eq_data[constraint][0] = leg.latch_angle
                 self.data.eq_active[constraint] = leg.latched
+        if self.front:
+            self.front.step(dt)
         mujoco.mj_step(self.model, self.data)
 
     def run(self, duration, on_step=None):
@@ -187,6 +198,8 @@ def simulate_hop(bunny: Bunny, command: HopCommand, on_step=None) -> HopResult:
     # 3-4. Push and land
     fire_time = {"left": max(0.0, -command.right_delay), "right": max(0.0, command.right_delay)}
     fired = {"left": False, "right": False}
+    if bunny.front:
+        bunny.front.fire()
 
     t = 0.0
     while t < MAX_HOP_TIME:
@@ -207,6 +220,8 @@ def simulate_hop(bunny: Bunny, command: HopCommand, on_step=None) -> HopResult:
         result.apex_height = max(result.apex_height, rise)
         result.max_tilt_deg = max(result.max_tilt_deg, bunny.tilt_deg())
         result.peak_current = max(result.peak_current, *(leg.current for leg in legs.values()))
+        if bunny.front:
+            result.peak_current = max(result.peak_current, bunny.front.current)
 
         bunny.step()
         if on_step:

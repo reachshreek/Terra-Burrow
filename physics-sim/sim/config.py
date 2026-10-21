@@ -45,6 +45,18 @@ class BunnyDesign:
     front_spring_stiffness: float = 1500.0  # N/m
     front_spring_damping: float = 15.0  # N·s/m
 
+    # --- How the front legs are driven ---
+    # "passive": a sprung strut (the BOM as it stands).
+    # "servo":   each front leg is a thigh + shin with the same coupled knee as the
+    #            rear legs, swung by its own ST3025, mounted under the sprung strut.
+    #            front_legs.py pushes with them at takeoff and levels the body with
+    #            them on landing, using the IMU (HAL2-008).
+    front_drive: str = "passive"
+    front_thigh_length: float = 0.045
+    front_shin_length: float = 0.045
+    front_full_push_angle_deg: float = 12.0  # hip angle at full extension
+    front_hip_range_deg: tuple = (5.0, 85.0)
+
     # --- Servo: Waveshare ST3025 at 12 V (datasheet values) ---
     servo_stall_torque: float = 3.92  # N·m  (40 kg·cm)
     servo_no_load_speed: float = 8.9  # rad/s (85 RPM)
@@ -118,6 +130,8 @@ DESIGNS = {
     "latch": BunnyDesign(drive="latch", **LATCH_LAYOUT),
     # Same, powered down the tether instead (about 160 g lighter).
     "latch_tethered": BunnyDesign(drive="latch", power="tether", **LATCH_LAYOUT),
+    # latch_tethered plus servo-driven front legs (two more ST3025s)
+    "latch_tethered_front": BunnyDesign(drive="latch", power="tether", front_drive="servo", **LATCH_LAYOUT),
 }
 
 
