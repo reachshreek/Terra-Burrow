@@ -1,0 +1,24 @@
+
+=== baseline ===
+big hops (after 3 half-push hops):     full-push hops upright
+  latch_tethered_front_k10              96%  (45/47; 0 fell in calibration)
+  latch_tethered_front_k10_pico         92%  (37/40; 0 fell in calibration)
+  latch_tethered_front_k13              75%  (21/28; 0 fell in calibration)
+  latch_tethered_front_k13_pico         78%  (25/32; 0 fell in calibration)
+bounding 10 hops:                      runs that fell   hops done
+  latch_tethered_front_k10               6/12        7.0
+  latch_tethered_front_k10_pico         10/12        5.8
+  latch_tethered_front_k13              12/12        3.0
+  latch_tethered_front_k13_pico         12/12        2.4
+
+=== bunny_controller ===
+big hops (after 3 half-push hops):     full-push hops upright
+  latch_tethered_front_k10              98%  (45/46; 0 fell in calibration)
+  latch_tethered_front_k10_pico        100%  (48/48; 0 fell in calibration)
+  latch_tethered_front_k13              77%  (23/30; 0 fell in calibration)
+  latch_tethered_front_k13_pico         85%  (29/34; 0 fell in calibration)
+bounding 10 hops:                      runs that fell   hops done
+  latch_tethered_front_k10               1/12        9.7
+  latch_tethered_front_k10_pico          1/12       10.0
+  latch_tethered_front_k13               8/12        6.1
+  latch_tethered_front_k13_pico          9/12        5.2

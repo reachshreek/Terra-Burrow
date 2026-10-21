@@ -25,7 +25,6 @@
     <light pos="0 0 3" dir="0 0 -1" directional="true"/>
     <geom name="floor" type="plane" size="10 10 0.1" contype="1" conaffinity="1"
           friction="0.9 0.005 0.0001" material="grid"/>
-    
 
     <body name="torso" pos="0 0 0.0995984">
       <freejoint name="root"/>
@@ -37,12 +36,10 @@
       <geom name="ear_right" type="capsule" fromto="0.11 -0.02 0.08 0.08 -0.035 0.17" size="0.012"
             contype="0" conaffinity="0" rgba="0.95 0.8 0.8 1"/>
       <site name="imu" pos="0 0 0.02" size="0.005"/>
-      <site name="tail" pos="-0.14 0 0" size="0.01"/>
       
       <body name="rear_thigh_left" pos="-0.05 0.06 -0.03" euler="0 0.349066 0">
         <joint name="hip_left" type="hinge" axis="0 1 0" range="0.0872665 1.39626"
-               armature="0.002" damping="0.01"
-               stiffness="0.0" springref="0"/>
+               armature="0.002" damping="0.01"/>
         <inertial pos="0 0 -0.0326017" mass="0.118" fullinertia="7.78548e-05 7.82923e-05 1.5625e-06 0 0 0"/>
         <geom type="capsule" fromto="0 0 0 0 0 -0.07" size="0.008" rgba="0.85 0.85 0.85 1"/>
         <body name="rear_shin_left" pos="0 0 -0.07">
@@ -55,8 +52,7 @@
       
       <body name="rear_thigh_right" pos="-0.05 -0.06 -0.03" euler="0 0.349066 0">
         <joint name="hip_right" type="hinge" axis="0 1 0" range="0.0872665 1.39626"
-               armature="0.002" damping="0.01"
-               stiffness="0.0" springref="0"/>
+               armature="0.002" damping="0.01"/>
         <inertial pos="0 0 -0.0326017" mass="0.118" fullinertia="7.78548e-05 7.82923e-05 1.5625e-06 0 0 0"/>
         <geom type="capsule" fromto="0 0 0 0 0 -0.07" size="0.008" rgba="0.85 0.85 0.85 1"/>
         <body name="rear_shin_right" pos="0 0 -0.07">
@@ -118,7 +114,7 @@
   </equality>
 
   <actuator>
-    <!-- Hip torque from each ST3025 (through the winder gears for the latch drive).
+    <!-- Hip torque from each ST3025, through the winder gears.
          The torque-speed limits are applied in servo.py. -->
     <motor name="servo_left" joint="hip_left" ctrlrange="-10.792 10.792"/>
     <motor name="servo_right" joint="hip_right" ctrlrange="-10.792 10.792"/>
@@ -129,7 +125,7 @@
     <motor name="front_servo_left" joint="front_hip_left" ctrlrange="-3.92 3.92"/>
     <motor name="front_servo_right" joint="front_hip_right" ctrlrange="-3.92 3.92"/>
   </actuator>
-  <!-- MPU-6050 (HAL2-008). front_legs.py adds its noise, bias and range limits. -->
+  <!-- MPU-6050 (HAL2-008). hardware.py adds its noise, bias and range limits. -->
   <sensor>
     <gyro name="imu_gyro" site="imu"/>
     <accelerometer name="imu_accel" site="imu"/>

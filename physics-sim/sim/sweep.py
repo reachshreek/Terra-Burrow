@@ -3,14 +3,15 @@
 For every hop command in a grid (left push, right push, right-leg delay), run
 several trials, each with the real-world uncertainties randomized: floor
 friction, spring rates, servo strength, center-of-mass position, total mass
-and servo timing jitter. Then:
+and front-servo strength. Each trial is also a different robot: its own IMU
+errors, release-servo speeds and command latencies (the sensor seed). Then:
   - save every trial to results/hop_map_<design>.csv
   - print a summary per command and the usable "cone": hop directions that
     land upright reliably AND go where they're aimed, trial after trial
   - plot landing spots and success rates to results/hop_map_<design>.png
 
-Run:  python sim/sweep.py --design improved
-      python sim/sweep.py --design bom --trials 20
+Run:  python sim/sweep.py
+      python sim/sweep.py --trials 20
 """
 
 import argparse
@@ -28,7 +29,7 @@ import mujoco  # noqa: E402
 import numpy as np  # noqa: E402
 
 from build_model import build_named  # noqa: E402
-from config import DESIGNS, RESULTS_DIR, model_path  # noqa: E402
+from config import DEFAULT_DESIGN, DESIGNS, RESULTS_DIR, model_path  # noqa: E402
 from hop import Bunny, HopCommand, simulate_hop  # noqa: E402
 from servo import servo_from_design  # noqa: E402
 
@@ -56,14 +57,15 @@ class Uncertainty:
     com_shift_mm: tuple
     mass_scale: float
     front_spring_scale: float
-    timing_jitter_ms: float
+    front_servo_strength_left: float
+    front_servo_strength_right: float
 
 
 def random_uncertainty(rng):
     return Uncertainty(
         floor_friction=rng.uniform(0.6, 1.2),  # smooth floor to grippy rug
-        spring_scale_left=rng.uniform(0.9, 1.1),  # spring rate tolerance ±10%
-        spring_scale_right=rng.uniform(0.9, 1.1),
+        spring_scale_left=rng.uniform(0.9, 1.1),  # spring rate tolerance ±10% (drawn, but not applied yet:
+        spring_scale_right=rng.uniform(0.9, 1.1),  # the latch spring's rate lives in hardware.py, not the model)
         servo_strength_left=rng.uniform(0.9, 1.1),  # servo-to-servo variation
         servo_strength_right=rng.uniform(0.9, 1.1),
         servo_speed_left=rng.uniform(0.95, 1.05),
@@ -71,11 +73,13 @@ def random_uncertainty(rng):
         com_shift_mm=tuple(rng.uniform(-5, 5, size=3)),  # mass estimates are rough
         mass_scale=rng.uniform(0.95, 1.05),
         front_spring_scale=rng.uniform(0.8, 1.2),
-        timing_jitter_ms=rng.uniform(-5, 5),  # bus servo command latency
+        front_servo_strength_left=rng.uniform(0.9, 1.1),
+        front_servo_strength_right=rng.uniform(0.9, 1.1),
     )
 
 
-def make_uncertain_bunny(design_name, u: Uncertainty, sensor_seed=0):
+def make_uncertain_bunny(design_name, u: Uncertainty, sensor_seed=0, controller_class=None):
+    """controller_class: None = BunnyController; BaselineController turns the control laws off."""
     model = mujoco.MjModel.from_xml_path(str(model_path(design_name)))
     design = DESIGNS[design_name]
 
@@ -86,20 +90,24 @@ def make_uncertain_bunny(design_name, u: Uncertainty, sensor_seed=0):
     torso = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "torso")
 
     model.geom_friction[floor, 0] = u.floor_friction
-    model.jnt_stiffness[joint("hip_left")] *= u.spring_scale_left
-    model.jnt_stiffness[joint("hip_right")] *= u.spring_scale_right
     model.jnt_stiffness[joint("front_spring_left")] *= u.front_spring_scale
     model.jnt_stiffness[joint("front_spring_right")] *= u.front_spring_scale
     model.body_ipos[torso] += np.array(u.com_shift_mm) / 1000.0
     model.body_mass[torso] *= u.mass_scale
     model.body_inertia[torso] *= u.mass_scale
 
+    specs = {
+        "rear_left": servo_from_design(design, u.servo_strength_left, u.servo_speed_left),
+        "rear_right": servo_from_design(design, u.servo_strength_right, u.servo_speed_right),
+        "front_left": servo_from_design(design, u.front_servo_strength_left),
+        "front_right": servo_from_design(design, u.front_servo_strength_right),
+    }
     return Bunny(
         design_name,
         model=model,
-        servo_left=servo_from_design(design, u.servo_strength_left, u.servo_speed_left),
-        servo_right=servo_from_design(design, u.servo_strength_right, u.servo_speed_right),
-        sensor_seed=sensor_seed,  # IMU noise, bias and mounting error, for designs that use the IMU
+        servo_specs=specs,
+        sensor_seed=sensor_seed,  # IMU errors, release-servo speeds, command latencies
+        controller_class=controller_class,
     )
 
 
@@ -114,9 +122,7 @@ def run_trial(job):
     bunny = make_uncertain_bunny(design_name, u, sensor_seed=seed)
     bunny.reset_to_crouch()
 
-    jittered = HopCommand(command.push_left, command.push_right,
-                          command.right_delay + u.timing_jitter_ms / 1000.0)
-    result = simulate_hop(bunny, jittered)
+    result = simulate_hop(bunny, command)
 
     return {
         "push_left": command.push_left,
@@ -280,7 +286,7 @@ def plot(design_name, rows, summaries, usable, path):
 
 def main():
     parser = argparse.ArgumentParser(description="Sweep hop commands with randomized uncertainty.")
-    parser.add_argument("--design", default="improved", choices=DESIGNS)
+    parser.add_argument("--design", default=DEFAULT_DESIGN, choices=DESIGNS)
     parser.add_argument("--trials", type=int, default=10, help="randomized trials per command")
     args = parser.parse_args()
 

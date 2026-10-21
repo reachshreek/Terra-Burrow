@@ -1,0 +1,10 @@
+Running 48 runs of 10 hops...
+
+latch_tethered_front_k13
+controller             mode              fell  hops/s     speed  per hop
+baseline               one at a time    12/12   0.42   29.3cm/s  72.2cm
+baseline               bound            12/12   0.98   65.6cm/s  66.5cm
+bunny_controller       one at a time     7/12   0.52   30.7cm/s  58.6cm
+bunny_controller       bound             6/12   0.71   34.3cm/s  48.0cm
+
+fell = runs that fell before finishing 10 hops; rates and speeds average the runs that didn't. Speed is straight-line distance over time, so a robot that curves scores lower.

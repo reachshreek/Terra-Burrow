@@ -1,15 +1,18 @@
 """Run one hop and measure what happened.
 
-A hop has four phases:
-  1. wind    - get each rear leg ready (wind-and-latch legs reel themselves into
-               their ratchet tooth; direct-drive servo legs are ready at once)
-  2. settle  - hold still until the bunny stops moving
-  3. push    - fire each rear leg. Left and right can push by different amounts
-               and fire at different times, which is how the bunny turns.
-  4. land    - legs fold back; wait until everything stops moving
+Bunny is the simulated robot: the MuJoCo model, its hardware (hardware.py) and
+its controller (bunny_controller.py, or with controller_class=BaselineController
+the controller without its control laws, for a before/after). Every controller tick, the hardware's
+sensor readings go into the controller and its servo commands go back out.
+simulate_hop() only sends the controller a HopCommand and watches; the
+controller does the wind -> settle -> fire -> land sequence itself.
 
-Run:  python sim/hop.py                                 (one straight hop, BOM design)
-      python sim/hop.py --design latch 1.0 1.0 0.02     (left push, right push, right-leg delay in s)
+The measurements here (distance, tilt, ...) use the simulator's true state.
+They score the hop, like a motion-capture rig would; the robot never sees them.
+
+Run:  python sim/hop.py                     (one straight full hop)
+      python sim/hop.py 1.0 0.7 0.02        (left push, right push, right-leg delay in s)
+      python sim/hop.py --no-controller     (the same, with BaselineController: no control laws)
 """
 
 import argparse
@@ -19,24 +22,19 @@ from dataclasses import dataclass, field
 import mujoco
 import numpy as np
 
-from config import DESIGNS, model_path
-from front_legs import FrontLegs
-from legs import make_leg, winding_report
+from build_model import front_stance_angle
+from config import DEFAULT_DESIGN, DESIGNS, model_path
+from hardware import RobotHardware
+from legs import winding_report
+from bunny_controller import BunnyController
+from controller import DT as CONTROL_DT
+from controller import BaselineController, BoundCommand, HopCommand  # noqa: F401  (re-exported)
 from servo import servo_from_design
 
-MAX_WIND_TIME = 3.0  # s, give up winding after this
-SETTLE_TIME = 0.6  # s, still time before the push
-LAND_TIME = 1.2  # s, minimum time after the push before measuring
-MAX_HOP_TIME = 3.0  # s, give up waiting for it to settle
+MAX_PREP_TIME = 6.0  # s, give up if the controller never starts the hop
+MAX_HOP_TIME = 4.0  # s after the push starts, give up waiting for it to finish
 UPRIGHT_LIMIT_DEG = 30.0  # final tilt beyond this counts as a fall
 SIDES = ("left", "right")
-
-
-@dataclass
-class HopCommand:
-    push_left: float = 1.0  # 0 = no push, 1 = full push (latch drive: fraction of full spring energy)
-    push_right: float = 1.0
-    right_delay: float = 0.0  # s; positive = right leg fires later, negative = earlier
 
 
 @dataclass
@@ -61,32 +59,30 @@ class HopResult:
 
 
 class Bunny:
-    """The MuJoCo model plus the two rear-leg drivers (and the front legs, if driven)."""
+    """The simulated robot: MuJoCo model + hardware + controller."""
 
-    def __init__(self, design_name="bom", model=None, servo_left=None, servo_right=None, sensor_seed=0):
+    def __init__(self, design_name=DEFAULT_DESIGN, model=None, servo_specs=None, sensor_seed=0,
+                 controller_class=None):
+        """servo_specs: optional {servo name: Servo} to vary individual servos (see sweep.py).
+        sensor_seed: everything random about this particular robot (IMU errors,
+        release-servo speeds, PWM phase, bus latencies).
+        controller_class: None = BunnyController; BaselineController turns the control laws off."""
         design = DESIGNS[design_name]
         self.design = design
         self.model = model if model is not None else mujoco.MjModel.from_xml_path(str(model_path(design_name)))
         self.data = mujoco.MjData(self.model)
-        self.servos = {
-            "left": servo_left or servo_from_design(design),
-            "right": servo_right or servo_from_design(design),
-        }
-        self.legs = {side: make_leg(design, self.servos[side]) for side in SIDES}
+        self.front_stance = front_stance_angle(design)
+        self.controller_class = controller_class
+        names = [f"rear_{s}" for s in SIDES] + [f"front_{s}" for s in SIDES]
+        self.servo_specs = {n: servo_from_design(design) for n in names}
+        self.servo_specs.update(servo_specs or {})
         self.sensor_seed = sensor_seed
-        self.front = self.make_front_legs()
 
         def name_id(kind, name):
             return mujoco.mj_name2id(self.model, kind, name)
 
         def geom_id(name):
             return name_id(mujoco.mjtObj.mjOBJ_GEOM, name)
-
-        def joint_id(name):
-            return name_id(mujoco.mjtObj.mjOBJ_JOINT, name)
-
-        def actuator_id(name):
-            return name_id(mujoco.mjtObj.mjOBJ_ACTUATOR, name)
 
         self.floor = geom_id("floor")
         self.torso = name_id(mujoco.mjtObj.mjOBJ_BODY, "torso")
@@ -97,29 +93,36 @@ class Bunny:
             "front_left": geom_id("front_foot_left"),
             "front_right": geom_id("front_foot_right"),
         }
-        self.hip_qpos = {s: self.model.jnt_qposadr[joint_id(f"hip_{s}")] for s in SIDES}
-        self.hip_qvel = {s: self.model.jnt_dofadr[joint_id(f"hip_{s}")] for s in SIDES}
-        self.servo_actuator = {s: actuator_id(f"servo_{s}") for s in SIDES}
+        self.power_up()
 
-        self.has_latch = design.drive == "latch"
-        if self.has_latch:
-            self.spring_actuator = {s: actuator_id(f"spring_{s}") for s in SIDES}
-            self.latch_constraint = {
-                s: name_id(mujoco.mjtObj.mjOBJ_EQUALITY, f"latch_{s}") for s in SIDES
-            }
-
-    # --- state helpers ---------------------------------------------------
+    def power_up(self):
+        """Fresh hardware state and a freshly booted controller."""
+        rng = np.random.default_rng(self.sensor_seed)
+        self.hardware = RobotHardware(self.design, self.model, self.data, rng, self.servo_specs, self.front_stance)
+        self.controller = (self.controller_class or BunnyController)(self.design, self.front_stance)
+        self.tick_timer = 0.0
+        self.pending_command = None
+        self.outputs = None
 
     def reset_to_crouch(self):
         mujoco.mj_resetDataKeyframe(self.model, self.data, 0)
         mujoco.mj_forward(self.model, self.data)
-        self.legs = {side: make_leg(self.design, self.servos[side]) for side in SIDES}
-        self.front = self.make_front_legs()
+        self.power_up()
 
-    def make_front_legs(self):
-        if self.design.front_drive != "servo":
-            return None
-        return FrontLegs(self.design, self.model, self.data, rng=np.random.default_rng(self.sensor_seed))
+    # --- talking to the controller ---------------------------------------
+
+    def send(self, command):
+        """Queue a HopCommand or BoundCommand for the controller's next tick."""
+        self.pending_command = command
+
+    @property
+    def status(self):
+        return self.outputs.status if self.outputs else "idle"
+
+    def estimated_yaw(self):
+        return self.outputs.yaw if self.outputs else 0.0
+
+    # --- true state, for scoring only -------------------------------------
 
     def torso_position(self):
         return self.data.xpos[self.torso].copy()
@@ -148,67 +151,51 @@ class Bunny:
 
     def step(self):
         dt = self.model.opt.timestep
-        for side, leg in self.legs.items():
-            angle = self.data.qpos[self.hip_qpos[side]]
-            speed = self.data.qvel[self.hip_qvel[side]]
-            servo_torque, spring_torque = leg.update(angle, speed, dt)
-            self.data.ctrl[self.servo_actuator[side]] = servo_torque
-
-            if self.has_latch:
-                self.data.ctrl[self.spring_actuator[side]] = spring_torque
-                # The ratchet pawl: lock the hip at the angle where it caught
-                constraint = self.latch_constraint[side]
-                self.model.eq_data[constraint][0] = leg.latch_angle
-                self.data.eq_active[constraint] = leg.latched
-        if self.front:
-            self.front.step(dt)
+        now = self.data.time
+        self.current = self.hardware.step(dt, now)
+        self.tick_timer -= dt
+        if self.tick_timer <= 0:
+            self.tick_timer += CONTROL_DT
+            inputs = self.hardware.sample()
+            inputs.command, self.pending_command = self.pending_command, None
+            self.outputs = self.controller.update(inputs)
+            self.hardware.apply(self.outputs, now)
         mujoco.mj_step(self.model, self.data)
 
     def run(self, duration, on_step=None):
-        steps = int(duration / self.model.opt.timestep)
-        for _ in range(steps):
+        for _ in range(int(duration / self.model.opt.timestep)):
             self.step()
             if on_step:
                 on_step(self)
 
-    def is_still(self):
-        return np.linalg.norm(self.data.qvel[:6]) < 0.02
-
 
 def simulate_hop(bunny: Bunny, command: HopCommand, on_step=None) -> HopResult:
-    """Do one hop starting from the bunny's current state and measure it."""
+    """Send one hop command, wait for the controller to finish it, and measure it."""
     result = HopResult(command)
     dt = bunny.model.opt.timestep
-    legs = bunny.legs
 
-    # 1. Wind: get each leg ready for its push
-    legs["left"].prepare(command.push_left)
-    legs["right"].prepare(command.push_right)
-    while not all(leg.is_ready() for leg in legs.values()) and result.wind_time < MAX_WIND_TIME:
+    def step():
         bunny.step()
         if on_step:
             on_step(bunny)
-        result.wind_time += dt
 
-    # 2. Settle
-    bunny.run(SETTLE_TIME, on_step)
+    # Winding and settling, done by the controller
+    bunny.send(command)
+    while bunny.pending_command is not None:  # until the controller's next tick picks it up
+        step()
+    waited = 0.0
+    while bunny.status in ("starting", "winding", "settling") and waited < MAX_PREP_TIME:
+        if bunny.status == "winding":
+            result.wind_time += dt
+        step()
+        waited += dt
+
     start_position = bunny.torso_position()
     start_heading = bunny.heading()
 
-    # 3-4. Push and land
-    fire_time = {"left": max(0.0, -command.right_delay), "right": max(0.0, command.right_delay)}
-    fired = {"left": False, "right": False}
-    if bunny.front:
-        bunny.front.fire()
-
+    # The push and the landing
     t = 0.0
-    while t < MAX_HOP_TIME:
-        for side in SIDES:
-            if not fired[side] and t >= fire_time[side]:
-                legs[side].fire()
-                fired[side] = True
-
-        # Measurements
+    while bunny.status != "idle" and t < MAX_HOP_TIME:
         touching = bunny.floor_contacts()
         if touching & bunny.body_geoms:
             result.body_hit_floor = True
@@ -216,21 +203,11 @@ def simulate_hop(bunny: Bunny, command: HopCommand, on_step=None) -> HopResult:
             result.flight_time += dt
         if not touching & {bunny.feet["front_left"], bunny.feet["front_right"]}:
             result.front_lift_time += dt
-        rise = bunny.torso_position()[2] - start_position[2]
-        result.apex_height = max(result.apex_height, rise)
+        result.apex_height = max(result.apex_height, bunny.torso_position()[2] - start_position[2])
         result.max_tilt_deg = max(result.max_tilt_deg, bunny.tilt_deg())
-        result.peak_current = max(result.peak_current, *(leg.current for leg in legs.values()))
-        if bunny.front:
-            result.peak_current = max(result.peak_current, bunny.front.current)
-
-        bunny.step()
-        if on_step:
-            on_step(bunny)
+        result.peak_current = max(result.peak_current, bunny.current)
+        step()
         t += dt
-
-        all_tucked = all(fired.values()) and all(leg.is_tucked() for leg in legs.values())
-        if all_tucked and t > LAND_TIME and bunny.is_still():
-            break
 
     # Final measurements, in the frame of the starting heading
     moved = bunny.torso_position() - start_position
@@ -274,14 +251,14 @@ def print_winding(design):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Simulate one hop and print what happened.")
-    parser.add_argument("--design", default="bom", choices=DESIGNS)
+    parser.add_argument("--design", default=DEFAULT_DESIGN, choices=DESIGNS)
+    parser.add_argument("--no-controller", action="store_true", help="BaselineController: no control laws")
     parser.add_argument("push_left", nargs="?", type=float, default=1.0)
     parser.add_argument("push_right", nargs="?", type=float, default=1.0)
     parser.add_argument("right_delay", nargs="?", type=float, default=0.0)
     args = parser.parse_args()
 
-    bunny = Bunny(args.design)
+    bunny = Bunny(args.design, controller_class=BaselineController if args.no_controller else None)
     bunny.reset_to_crouch()
     print_report(simulate_hop(bunny, HopCommand(args.push_left, args.push_right, args.right_delay)))
-    if bunny.has_latch:
-        print_winding(bunny.design)
+    print_winding(bunny.design)

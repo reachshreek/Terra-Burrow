@@ -15,12 +15,14 @@ from dataclasses import dataclass
 
 import numpy as np
 
-import dataclasses
-
 from config import BOM_CSV, DESIGNS, PART_MASSES_CSV, BunnyDesign, model_path
 from legs import peak_spring_torque, winder_gear_ratio
 
 SIDES = {"left": +1, "right": -1}
+
+# part_masses.csv rows can be limited to one build option ("when" column, e.g. "power=battery").
+# This robot's options:
+BUILD_OPTIONS = {"drive": "latch", "front_drive": "servo", "power": "tether"}
 
 
 # ---------------------------------------------------------------------------
@@ -100,16 +102,16 @@ def lump(parts):
     return LumpedBody(total_mass, com, inertia)
 
 
-def row_applies(row, design):
-    """A row's "when" column limits it to one drive or power option, e.g. "drive=latch"."""
+def row_applies(row):
+    """A row's "when" column limits it to one build option, e.g. "drive=latch"."""
     condition = row.get("when", "").strip()
     if not condition:
         return True
     setting, value = condition.split("=")
-    return getattr(design, setting) == value
+    return BUILD_OPTIONS[setting] == value
 
 
-def parts_by_body(mass_rows, design):
+def parts_by_body(mass_rows):
     """Turn mass-table rows into PointParts grouped by MuJoCo body name.
 
     "rear_thigh_*" means one copy of the part on each side (left and right).
@@ -121,7 +123,7 @@ def parts_by_body(mass_rows, design):
         bodies.setdefault(body_name, []).append(part)
 
     for row in mass_rows:
-        if row["sim_body"] == "off_robot" or not row_applies(row, design):
+        if row["sim_body"] == "off_robot" or not row_applies(row):
             continue
         qty = float(row["qty"])
         mass = qty * float(row["mass_each_g"]) / 1000.0
@@ -190,13 +192,11 @@ def mirror(position, side):
 def rear_leg_xml(design, bodies, side):
     hip_min, hip_max = (math.radians(a) for a in design.hip_range_deg)
     tilt = math.radians(design.rear_leg_tilt_deg)
-    spring_rest = math.radians(design.spring_assist_rest_angle_deg)
     L1, L2 = design.thigh_length, design.shin_length
     return f"""
       <body name="rear_thigh_{side}" pos="{fmt(mirror(design.rear_hip_pos, side))}" euler="0 {tilt:.6g} 0">
         <joint name="hip_{side}" type="hinge" axis="0 1 0" range="{hip_min:.6g} {hip_max:.6g}"
-               armature="{design.servo_armature}" damping="0.01"
-               stiffness="{design.spring_assist_stiffness}" springref="{spring_rest:.6g}"/>
+               armature="{design.servo_armature}" damping="0.01"/>
         {inertial_xml(bodies[f"rear_thigh_{side}"])}
         <geom type="capsule" fromto="0 0 0 0 0 {-L1}" size="0.008" rgba="0.85 0.85 0.85 1"/>
         <body name="rear_shin_{side}" pos="0 0 {-L1}">
@@ -209,7 +209,7 @@ def rear_leg_xml(design, bodies, side):
 
 
 def front_stance_angle(design):
-    """Front hip angle that puts a servo-driven front foot on the floor when crouched."""
+    """Front hip angle that puts the front foot on the floor when crouched."""
     full_length = design.front_thigh_length + design.front_shin_length
     return math.acos(front_leg_length(design) / full_length)
 
@@ -220,15 +220,8 @@ def front_leg_xml(design, bodies, side):
         <joint name="front_spring_{side}" type="slide" axis="0 0 1" range="0 {design.front_leg_travel}"
                stiffness="{design.front_spring_stiffness}" springref="0" damping="{design.front_spring_damping}"/>
         {inertial_xml(bodies[f"front_leg_{side}"])}"""
-    if design.front_drive != "servo":
-        return f"""
-      {strut}
-        <geom type="capsule" fromto="0 0 0 0 0 {-length:.6g}" size="0.007" rgba="0.85 0.85 0.85 1"/>
-        <geom name="front_foot_{side}" type="sphere" pos="0 0 {-length:.6g}" size="{design.foot_radius}" rgba="0.2 0.2 0.2 1"/>
-      </body>"""
-
-    # Servo-driven: the same coupled-knee thigh + shin as the rear legs, hanging
-    # under the sprung strut, with the foot moving straight up and down.
+    # The same coupled-knee thigh + shin as the rear legs, hanging under the
+    # sprung strut, with the foot moving straight up and down.
     hip_min, hip_max = (math.radians(a) for a in design.front_hip_range_deg)
     L1, L2 = design.front_thigh_length, design.front_shin_length
     return f"""
@@ -248,26 +241,8 @@ def front_leg_xml(design, bodies, side):
       </body>"""
 
 
-def tether_xml(design):
-    if design.tether_length is None:
-        return "", ""
-    anchor_site = f'<site name="tether_anchor" pos="{fmt(design.tether_anchor)}" size="0.02" rgba="1 0.5 0 1"/>'
-    tendon = f"""
-  <tendon>
-    <!-- solreflimit makes the end stop slightly soft, like a real cable with some give -->
-    <spatial name="tether" limited="true" range="0 {design.tether_length}" solreflimit="0.03 1"
-             width="0.003" rgba="1 0.5 0 1">
-      <site site="tether_anchor"/>
-      <site site="tail"/>
-    </spatial>
-  </tendon>"""
-    return anchor_site, tendon
-
-
 def latch_xml(design):
     """Extra equality constraints and actuators for the wind-and-latch drive."""
-    if design.drive != "latch":
-        return "", ""
     crouch = math.radians(design.crouch_angle_deg)
     spring_limit = 1.5 * peak_spring_torque(design)
     pawls = "\n".join(
@@ -283,10 +258,16 @@ def latch_xml(design):
 {springs}""")
 
 
+IMU_XML = """
+  <!-- MPU-6050 (HAL2-008). hardware.py adds its noise, bias and range limits. -->
+  <sensor>
+    <gyro name="imu_gyro" site="imu"/>
+    <accelerometer name="imu_accel" site="imu"/>
+  </sensor>"""
+
+
 def front_drive_xml(design):
-    """Knee linkages, servo actuators and IMU sensors for servo-driven front legs."""
-    if design.front_drive != "servo":
-        return "", "", ""
+    """Knee linkages and servo actuators for the front legs."""
     knees = "\n".join(
         f'    <joint joint1="front_knee_{side}" joint2="front_hip_{side}" polycoef="0 -2 0 0 0" solref="0.002 1"/>'
         for side in SIDES)
@@ -294,39 +275,24 @@ def front_drive_xml(design):
         f'    <motor name="front_servo_{side}" joint="front_hip_{side}" '
         f'ctrlrange="{-design.servo_stall_torque:.6g} {design.servo_stall_torque:.6g}"/>'
         for side in SIDES)
-    imu = """
-  <!-- MPU-6050 (HAL2-008). front_legs.py adds its noise, bias and range limits. -->
-  <sensor>
-    <gyro name="imu_gyro" site="imu"/>
-    <accelerometer name="imu_accel" site="imu"/>
-  </sensor>"""
     return f"""
     <!-- Front-leg linkages, like the rear: knee angle = -2 x hip angle. -->
 {knees}""", f"""
     <!-- Front-leg ST3025s, direct drive. The torque-speed limits are applied in servo.py. -->
-{servos}""", imu
+{servos}"""
 
 
 def build_mjcf(design: BunnyDesign, bodies):
     crouch = math.radians(design.crouch_angle_deg)
     start_height = crouched_torso_height(design) + 0.002
     # Keyframe qpos: torso position + quaternion, then each joint in tree order:
-    # left hip, left knee, right hip, right knee, then the front legs.
-    # Servo-driven front legs add their hip and knee after each front slide.
-    if design.front_drive == "servo":
-        stance = front_stance_angle(design)
-        front_qpos = [0, stance, -2 * stance] * 2
-    else:
-        front_qpos = [0, 0]
+    # left hip, left knee, right hip, right knee, then each front leg's slide, hip and knee.
+    stance = front_stance_angle(design)
     crouch_qpos = [0, 0, start_height, 1, 0, 0, 0,
-                   crouch, -2 * crouch, crouch, -2 * crouch, *front_qpos]
-    if design.drive == "latch":
-        hip_torque_limit = design.servo_stall_torque * winder_gear_ratio(design)
-    else:
-        hip_torque_limit = design.servo_stall_torque / design.linkage_ratio
-    anchor_site, tendon = tether_xml(design)
+                   crouch, -2 * crouch, crouch, -2 * crouch, *[0, stance, -2 * stance] * 2]
+    hip_torque_limit = design.servo_stall_torque * winder_gear_ratio(design)
     pawl_constraints, spring_actuators = latch_xml(design)
-    front_knees, front_servos, imu_sensors = front_drive_xml(design)
+    front_knees, front_servos = front_drive_xml(design)
 
     return f"""<mujoco model="halo_bunny">
   <!-- Generated by build_model.py from the BOM and part_masses.csv. Do not edit by hand. -->
@@ -355,7 +321,6 @@ def build_mjcf(design: BunnyDesign, bodies):
     <light pos="0 0 3" dir="0 0 -1" directional="true"/>
     <geom name="floor" type="plane" size="10 10 0.1" contype="1" conaffinity="1"
           friction="{design.foot_floor_friction} 0.005 0.0001" material="grid"/>
-    {anchor_site}
 
     <body name="torso" pos="0 0 {start_height:.6g}">
       <freejoint name="root"/>
@@ -367,14 +332,13 @@ def build_mjcf(design: BunnyDesign, bodies):
       <geom name="ear_right" type="capsule" fromto="{fmt((0.11, -0.02, 0.08))} {fmt((0.08, -0.035, 0.17))}" size="0.012"
             contype="0" conaffinity="0" rgba="0.95 0.8 0.8 1"/>
       <site name="imu" pos="0 0 0.02" size="0.005"/>
-      <site name="tail" pos="{fmt(design.tail_pos)}" size="0.01"/>
       {rear_leg_xml(design, bodies, "left")}
       {rear_leg_xml(design, bodies, "right")}
       {front_leg_xml(design, bodies, "left")}
       {front_leg_xml(design, bodies, "right")}
     </body>
   </worldbody>
-{tendon}
+
   <equality>
     <!-- The hind-leg linkage: knee angle = -2 x hip angle keeps each foot on its push axis. -->
     <joint joint1="knee_left" joint2="hip_left" polycoef="0 -2 0 0 0" solref="0.002 1"/>
@@ -382,11 +346,11 @@ def build_mjcf(design: BunnyDesign, bodies):
   </equality>
 
   <actuator>
-    <!-- Hip torque from each ST3025 (through the winder gears for the latch drive).
+    <!-- Hip torque from each ST3025, through the winder gears.
          The torque-speed limits are applied in servo.py. -->
     <motor name="servo_left" joint="hip_left" ctrlrange="{-hip_torque_limit:.6g} {hip_torque_limit:.6g}"/>
     <motor name="servo_right" joint="hip_right" ctrlrange="{-hip_torque_limit:.6g} {hip_torque_limit:.6g}"/>{spring_actuators}{front_servos}
-  </actuator>{imu_sensors}
+  </actuator>{IMU_XML}
 
   <keyframe>
     <key name="crouch" qpos="{fmt(crouch_qpos)}"/>
@@ -401,7 +365,7 @@ def build(design: BunnyDesign, path, verbose=True):
     if verbose:
         check_tables_agree(bom_items, mass_rows)
 
-    bodies = parts_by_body(mass_rows, design)
+    bodies = parts_by_body(mass_rows)
     path.write_text(build_mjcf(design, bodies))
 
     if verbose:
@@ -413,13 +377,9 @@ def build(design: BunnyDesign, path, verbose=True):
     return path
 
 
-def build_named(design_name, tether_length=None, verbose=False):
-    """Build one of the designs in config.DESIGNS, optionally with a tether."""
-    design = DESIGNS[design_name]
-    if tether_length is not None:
-        design = dataclasses.replace(design, tether_length=tether_length)
-    path = model_path(design_name, with_tether=tether_length is not None)
-    return build(design, path, verbose)
+def build_named(design_name, verbose=False):
+    """Build one of the designs in config.DESIGNS."""
+    return build(DESIGNS[design_name], model_path(design_name), verbose)
 
 
 if __name__ == "__main__":
