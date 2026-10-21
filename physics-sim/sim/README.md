@@ -24,7 +24,7 @@ legs, battery) and the scripts that only they used were removed; they're in git 
 | `part_masses.csv` | Mass and position for every BOM line (keyed by BOM ID). **Most masses are estimates.** Replace them with weighed values as parts arrive. |
 | `config.py` | Geometry, servo specs, spring, ratchet and release-servo values. |
 | `build_model.py` | BOM + part masses + config → `bunny_latch_tethered_front.xml`. Warns if a BOM line has no mass entry. |
-| `bunny_controller.py` | **The controller.** `BunnyController`'s control laws on top of the baseline: front-lead feedforward, bounding ramp, steered bounding. See "Controller" below. |
+| `bunny_controller.py` | **The controller.** `BunnyController`'s control laws on top of the baseline: front-lead feedforward, steered bounding. See "Controller" below. |
 | `controller/` | The machinery under it, run once per 200 Hz tick as `outputs = controller.update(inputs)`. `interface.py`: Inputs, Outputs, commands, `HopPlan`, `HopRecord`. `estimator.py`: attitude filter. `legs.py`: rear latch (wind/unwind/fire/re-arm) and front-leg phase logic, including the leveling PD. `baseline.py`: `BaselineController`, the hop and bounding sequencing with no control laws, and the hooks `bunny_controller.py` overrides. `bound_model.py`: the steering model (fit from the bound map, inverted by brute force). |
 | `hardware.py` | The robot's parts between controller and physics, no decisions: MPU-6050 (bias, noise, mounting error, range), ST3025s on the bus (command latency, their own encoder-based position loops via `servo.py`), MG90D release servos on the PCA9685 (PWM frames + travel time), the ratchet and pawl, foot switches. |
 | `servo.py` | ST3025 model: position control limited by the torque-speed line, running on its own 12-bit encoder (differenced speed, deadband, 1 kHz loop, proportional only). The host only sees the position it reports over the bus. |
@@ -32,7 +32,7 @@ legs, battery) and the scripts that only they used were removed; they're in git 
 | `hop.py` | `Bunny` = model + hardware + controller, ticked together (`controller_class=BaselineController` for no control laws). `simulate_hop` sends one `HopCommand` and reports distance, direction, turn, flight time, tilt and current. |
 | `sweep.py` | Hop map: every command × randomized uncertainty → `results/hop_map_<design>.{csv,png}` (characterization only; the controller doesn't use it). Also `make_uncertain_bunny`, the randomized robot every script uses. |
 | `bound_map.py` | Bound map: randomized robots bound with a random command every hop; each hop measured launch to next launch → `results/bound_map_<design>.csv`. The steered-bounding model is fit from it. `--spring` for stiffer springs. |
-| `watch.py` | Watch it: live 3D window (`--live`) or GIF, single hop / one at a time / bounding, any spring. `--no-controller` for the "before"; `--preset before_after` for both side by side. |
+| `watch.py` | Watch it: live 3D window (`--live`, with live graphs of pitch, height, heading and speed plus a stats panel from `live_plots.py`; `--no-plots` to hide) or GIF, single hop / one at a time / bounding, any spring. `--no-controller` for the "before"; `--preset before_after` for both side by side. |
 | `level2_big_hops.py` | Level 2: stiffer latch springs (bigger hops), with and without the control laws. → `results/level2_big_hops.txt` |
 | `level3_bounding.py` | Level 3: bounding vs one hop at a time, with and without the control laws. `--spring`. → `results/level3_bounding*.txt` |
 | `controller_eval.py` | Scores `bunny_controller.py` against the baseline on big single hops and bounding, with the release servos on the PCA9685 and on Pico timers. → `results/controller_eval.txt` |
@@ -116,8 +116,8 @@ both rear feet are down (30 ms). Speeds average the runs that didn't fall.
 | 13, baseline | 29 cm/s, 12/12 fell | 66 cm/s, 12/12 fell |
 | 13, BunnyController | 31 cm/s, 7/12 fell | 34 cm/s, 6/12 fell |
 
-Bounding about doubles ground speed. At spring 7 the control laws cost ~15% of bounding speed (the ramp's
-smaller first hops and the front lead); at 10 they're what keeps it upright. At 13 it still falls in half
+Bounding about doubles ground speed. At spring 7 the control laws cost ~15% of bounding speed (the front lead,
+and the ramp that was in place when this table was made); at 10 they're what keeps it upright. At 13 it still falls in half
 the runs: going further needs hardware (more front-leg authority, a tail, lower centre of mass) or a landing
 controller that does more than level.
 
@@ -125,7 +125,7 @@ Proposed BOM rows for the latch design are in `../BOM changes - wind and latch.c
 
 ## Agility: steered bounding (`agility_eval.py`, `bound_map.py`)
 
-`BoundCommand(heading_deg=...)` (or `STEER` over serial) bounds toward a heading (law 3 below). Each
+`BoundCommand(heading_deg=...)` (or `STEER` over serial) bounds toward a heading (law 2 below). Each
 landing: `turn = clip(heading - yaw, ±20°)`, teeth and release timing chosen from a model fitted on
 bounding hops (`bound_map.py`); once the teeth are wound, the release timing is re-chosen at launch
 from the yaw measured then. A new BoundCommand mid-bound takes over without stopping. Bounding hops
@@ -147,15 +147,14 @@ right way. The slalom flips the order every 3 hops, faster than ~20°/hop can fo
 ## Controller (`bunny_controller.py`)
 
 `BaselineController` (`controller/baseline.py`) runs the same machinery with none of these laws: every
-hop exactly as commanded, front legs pushing with the rear, no ramp, no steering. That's the "before" for
+hop exactly as commanded, front legs pushing with the rear, no steering. That's the "before" for
 `--no-controller`. The machinery both share: the servos' own position loops, the attitude estimator, the
 front-leg leveling PD in stance, and the rear-latch and front-leg state machines.
 
-1. **Front-lead feedforward.** The front legs push `FRONT_LEAD` (30 ms) before the rear releases.
+1. **Front-lead feedforward.** The front legs push `FRONT_LEAD` (now 50 ms; the tables here were run at 30 ms with a bounding ramp) before the rear releases.
    Step test: upright with a 0 / 15 / 30 ms lead was 100/100/100% at spring 7, 100/100/94% at 10,
    and 31/94/75% at 13.
-2. **Bounding ramp.** Bounding starts at half push and reaches full push over 3 hops.
-3. **Steered bounding.** A heading loop, one correction per bound hop (see "Agility" above).
+2. **Steered bounding.** A heading loop, one correction per bound hop (see "Agility" above).
 
 `controller_eval.py`, 12 randomized robots the maps never saw:
 

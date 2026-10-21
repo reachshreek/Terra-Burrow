@@ -9,7 +9,7 @@ Tests (each on 12 randomized robots the maps never saw, release servos on the PC
 
 Controllers compared (every test sends the same BoundCommands, with heading_deg):
   baseline   BaselineController: ignores the heading, every bound hop straight at the commanded push
-  bunny      BunnyController: front lead, ramp, and a heading loop on every bound hop
+  bunny      BunnyController: front lead and a heading loop on every bound hop
 
 Run:  .venv/bin/python sim/agility_eval.py               (~3 min)
       .venv/bin/python sim/agility_eval.py --spring 10

@@ -9,6 +9,9 @@ Each run is a randomized robot like in the sweeps (--seed picks which one; the
 same seed means the same robot and floor every time). The camera follows the
 torso from its left side, swinging to keep up as it turns.
 
+--live shows live graphs over the 3D view (pitch, height, heading, speed, and a stats
+panel; see live_plots.py). --no-plots turns them off.
+
 --no-controller runs BaselineController instead of BunnyController: the same
 machinery (estimator, leg sequencing, front-leg leveling) without the control
 laws in bunny_controller.py, for a before/after.
@@ -119,12 +122,15 @@ def record(panels, seconds, slowmo, path, seed):
     print(f"Saved {path.relative_to(RESULTS_DIR.parent.parent)} ({len(frames)} frames)")
 
 
-def live(design, spring, mode, seed, seconds, controller=True):
+def live(design, spring, mode, seed, seconds, controller=True, plots=True):
     import mujoco.viewer
+    from live_plots import LivePlots
     bunny = make_bunny(design, spring, seed, controller)
-    print(f"{design}, spring {spring:g}, {mode}, robot {seed}, "
-          f"{'BunnyController' if controller else 'BaselineController (no control laws)'}")
-    with mujoco.viewer.launch_passive(bunny.model, bunny.data) as viewer:
+    name = 'BunnyController' if controller else 'BaselineController (no control laws)'
+    print(f"{design}, spring {spring:g}, {mode}, robot {seed}, {name}")
+    graphs = LivePlots(f"{name.split()[0]}, spring {spring:g}") if plots else None
+    with mujoco.viewer.launch_passive(bunny.model, bunny.data, show_left_ui=not plots,
+                                      show_right_ui=not plots) as viewer:
         wall_start = time.time()
         while viewer.is_running() and bunny.data.time < seconds:
             drive(bunny, mode)
@@ -133,7 +139,13 @@ def live(design, spring, mode, seed, seconds, controller=True):
                 print("Fell over - resetting")
                 bunny.reset_to_crouch()
                 wall_start = time.time()
+                if graphs:
+                    graphs.falls += 1
+                    graphs.reset()
             if int(bunny.data.time / bunny.model.opt.timestep) % 33 == 0:
+                if graphs:
+                    graphs.sample(bunny)
+                    graphs.draw(viewer, bunny)
                 viewer.sync()
                 ahead = bunny.data.time - (time.time() - wall_start)
                 if ahead > 0:
@@ -165,6 +177,7 @@ def main():
     parser.add_argument("--slowmo", type=float, default=1.0, help="0.5 = half speed (GIF only)")
     parser.add_argument("--seed", type=int, default=0, help="which randomized robot")
     parser.add_argument("--live", action="store_true", help="open the 3D viewer instead of writing a GIF")
+    parser.add_argument("--no-plots", action="store_true", help="--live without the live graphs")
     parser.add_argument("--no-controller", action="store_true",
                         help="BaselineController instead of BunnyController (no control laws), for a before/after")
     args = parser.parse_args()
@@ -180,7 +193,8 @@ def main():
         p = PRESETS[args.preset]
         record(p["panels"], p["seconds"], p["slowmo"], RESULTS_DIR / f"watch_{args.preset}_robot{args.seed}.gif", args.seed)
     elif args.live:
-        live(args.design, args.spring, args.mode, args.seed, args.seconds if args.seconds != 6.0 else 1e9, on)
+        live(args.design, args.spring, args.mode, args.seed, args.seconds if args.seconds != 6.0 else 1e9, on,
+             plots=not args.no_plots)
     else:
         label = f"spring {args.spring:g}, {args.mode}{'' if on else ', no control laws'}"
         name = f"watch_k{args.spring:g}_{args.mode}{'' if on else '_baseline'}_robot{args.seed}.gif"

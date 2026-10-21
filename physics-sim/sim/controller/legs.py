@@ -211,6 +211,7 @@ class FrontLegLogic:
         base = self.leg_length * math.cos(self.stance)
         pitch_change = PITCH_KP * pitch + PITCH_KD * pitch_rate
         roll_change = ROLL_KP * roll + ROLL_KD * roll_rate
+
         out = {}
         for side, sign in (("left", -1), ("right", +1)):
             change = np.clip(pitch_change + sign * roll_change, -MAX_LENGTH_CHANGE, MAX_LENGTH_CHANGE)

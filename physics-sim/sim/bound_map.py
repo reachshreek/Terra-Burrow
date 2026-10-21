@@ -51,7 +51,6 @@ class RandomBounds(bunny_controller.BunnyController):
 
 def run(job):
     design_name, seed, run_index = job
-    bunny_controller.BOUND_RAMP_START = 1.0  # the random commands are the warm-up
     import hop
     hop.BunnyController = RandomBounds
     RandomBounds.rng = np.random.default_rng([seed, run_index])
