@@ -12,6 +12,10 @@ torso from its left side, swinging to keep up as it turns.
 --live shows live graphs over the 3D view (pitch, height, heading, speed, and a stats
 panel; see live_plots.py). --no-plots turns them off.
 
+--camera picks the live view: "chase" (default) follows the bunny from its left side and
+swings round as it turns, "follow" follows it from a fixed direction, "free" is the viewer's
+own mouse-driven camera. In chase/follow you can still zoom and tilt with the mouse.
+
 --no-controller runs BaselineController instead of BunnyController: the same
 machinery (estimator, leg sequencing, front-leg leveling) without the control
 laws in bunny_controller.py, for a before/after.
@@ -122,7 +126,21 @@ def record(panels, seconds, slowmo, path, seed):
     print(f"Saved {path.relative_to(RESULTS_DIR.parent.parent)} ({len(frames)} frames)")
 
 
-def live(design, spring, mode, seed, seconds, controller=True, plots=True):
+def aim_camera(viewer, bunny, camera, first):
+    """Point the viewer's camera at the bunny ("chase" / "follow"); "free" leaves it alone."""
+    if camera == "free":
+        return
+    cam = viewer.cam
+    if first:
+        cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+        cam.trackbodyid = bunny.torso
+        cam.distance, cam.elevation, cam.azimuth = 1.1, -12.0, 90.0
+    if camera == "chase":  # swing toward the bunny's left side, smoothed so a tumble doesn't whip it round
+        target = math.degrees(bunny.heading()) + 90
+        cam.azimuth += 0.05 * ((target - cam.azimuth + 180) % 360 - 180)
+
+
+def live(design, spring, mode, seed, seconds, controller=True, plots=True, camera="chase"):
     import mujoco.viewer
     from live_plots import LivePlots
     bunny = make_bunny(design, spring, seed, controller)
@@ -131,6 +149,8 @@ def live(design, spring, mode, seed, seconds, controller=True, plots=True):
     graphs = LivePlots(f"{name.split()[0]}, spring {spring:g}") if plots else None
     with mujoco.viewer.launch_passive(bunny.model, bunny.data, show_left_ui=not plots,
                                       show_right_ui=not plots) as viewer:
+        with viewer.lock():
+            aim_camera(viewer, bunny, camera, first=True)
         wall_start = time.time()
         while viewer.is_running() and bunny.data.time < seconds:
             drive(bunny, mode)
@@ -146,6 +166,8 @@ def live(design, spring, mode, seed, seconds, controller=True, plots=True):
                 if graphs:
                     graphs.sample(bunny)
                     graphs.draw(viewer, bunny)
+                with viewer.lock():
+                    aim_camera(viewer, bunny, camera, first=False)
                 viewer.sync()
                 ahead = bunny.data.time - (time.time() - wall_start)
                 if ahead > 0:
@@ -178,6 +200,8 @@ def main():
     parser.add_argument("--seed", type=int, default=0, help="which randomized robot")
     parser.add_argument("--live", action="store_true", help="open the 3D viewer instead of writing a GIF")
     parser.add_argument("--no-plots", action="store_true", help="--live without the live graphs")
+    parser.add_argument("--camera", default="chase", choices=("chase", "follow", "free"),
+                        help="--live view: chase (side view, turns with it), follow (fixed direction), free")
     parser.add_argument("--no-controller", action="store_true",
                         help="BaselineController instead of BunnyController (no control laws), for a before/after")
     args = parser.parse_args()
@@ -194,7 +218,7 @@ def main():
         record(p["panels"], p["seconds"], p["slowmo"], RESULTS_DIR / f"watch_{args.preset}_robot{args.seed}.gif", args.seed)
     elif args.live:
         live(args.design, args.spring, args.mode, args.seed, args.seconds if args.seconds != 6.0 else 1e9, on,
-             plots=not args.no_plots)
+             plots=not args.no_plots, camera=args.camera)
     else:
         label = f"spring {args.spring:g}, {args.mode}{'' if on else ', no control laws'}"
         name = f"watch_k{args.spring:g}_{args.mode}{'' if on else '_baseline'}_robot{args.seed}.gif"
