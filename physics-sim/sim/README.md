@@ -32,7 +32,7 @@ legs, battery) and the scripts that only they used were removed; they're in git 
 | `hop.py` | `Bunny` = model + hardware + controller, ticked together (`controller_class=BaselineController` for no control laws). `simulate_hop` sends one `HopCommand` and reports distance, direction, turn, flight time, tilt and current. |
 | `sweep.py` | Hop map: every command × randomized uncertainty → `results/hop_map_<design>.{csv,png}` (characterization only; the controller doesn't use it). Also `make_uncertain_bunny`, the randomized robot every script uses. |
 | `bound_map.py` | Bound map: randomized robots bound with a random command every hop; each hop measured launch to next launch → `results/bound_map_<design>.csv`. The steered-bounding model is fit from it. `--spring` for stiffer springs. |
-| `watch.py` | Watch it: live 3D window (`--live`, with live graphs of pitch, height, heading and speed plus a stats panel from `live_plots.py`; `--no-plots` to hide) or GIF, single hop / one at a time / bounding, any spring. `--no-controller` for the "before"; `--preset before_after` for both side by side. |
+| `watch.py` | Watch it: live 3D window (`--live`, with live graphs of pitch, height, heading and speed plus a stats panel from `live_plots.py`; `--no-plots` to hide) or GIF, single hop / one at a time / bounding, any spring. `--no-controller` for the "before"; `--preset before_after` for both side by side. `--no-hud` hides graphs, stats and viewer panels; `--garden` dresses the scene as a mystical garden (`garden.py`: looks only, physics unchanged). |
 | `level2_big_hops.py` | Level 2: stiffer latch springs (bigger hops), with and without the control laws. → `results/level2_big_hops.txt` |
 | `level3_bounding.py` | Level 3: bounding vs one hop at a time, with and without the control laws. `--spring`. → `results/level3_bounding*.txt` |
 | `controller_eval.py` | Scores `bunny_controller.py` against the baseline on big single hops and bounding, with the release servos on the PCA9685 and on Pico timers. → `results/controller_eval.txt` |
@@ -64,6 +64,7 @@ robot: its own IMU errors, release-servo speeds, PWM phase and command latencies
 .venv/bin/python sim/level3_bounding.py --spring 10               # bounding (~2 min)
 .venv/bin/python sim/raibert_eval.py                              # Raibert loops vs the current controller (~6 min)
 .venv/bin/mjpython sim/watch.py --design latch_tethered_front_swing --spring 13 --live --height 10
+.venv/bin/mjpython sim/watch.py --design latch_tethered_front_swing --spring 13 --live --garden --no-hud   # showcase view
 .venv/bin/python sim/run_firmware.py --do "hop 1 1 0" --do "steer 90 8"  # the firmware's main loop on a sim robot
 ```
 

@@ -78,9 +78,10 @@ def random_uncertainty(rng):
     )
 
 
-def make_uncertain_bunny(design_name, u: Uncertainty, sensor_seed=0, controller_class=None):
-    """controller_class: None = BunnyController; BaselineController turns the control laws off."""
-    model = mujoco.MjModel.from_xml_path(str(model_path(design_name)))
+def make_uncertain_bunny(design_name, u: Uncertainty, sensor_seed=0, controller_class=None, xml=None):
+    """controller_class: None = BunnyController; BaselineController turns the control laws off.
+    xml: the model as a string instead of the built file (e.g. watch.py --garden's dressed-up copy)."""
+    model = mujoco.MjModel.from_xml_string(xml) if xml else mujoco.MjModel.from_xml_path(str(model_path(design_name)))
     design = DESIGNS[design_name]
 
     def joint(name):

@@ -22,6 +22,11 @@ panel; see live_plots.py). --no-plots turns them off.
 swings round as it turns, "follow" follows it from a fixed direction, "free" is the viewer's
 own mouse-driven camera. In chase/follow you can still zoom and tilt with the mouse.
 
+--no-hud hides everything but the scene (graphs, stats and MuJoCo's panels), for recording.
+--garden dresses the scene as a mystical garden: twilight sky, mossy ground, a stone path
+through a blossom archway, glowing flowers, mushrooms and fireflies (garden.py). Looks only:
+the floor and physics are the same, so it's the same run as on the plain grid.
+
 --no-controller runs BaselineController instead of BunnyController: the same
 machinery (estimator, leg sequencing, front-leg leveling) without the control
 laws in bunny_controller.py, for a before/after.
@@ -31,6 +36,8 @@ Run (macOS needs mjpython for --live):
     .venv/bin/mjpython sim/watch.py --spring 10 --mode bound --live --no-controller   # the "before"
     .venv/bin/mjpython sim/watch.py --design latch_tethered_front_swing --spring 10 --live --height 12 --speed 70
                                                                      # Raibert loops (front shoulder swing)
+    .venv/bin/mjpython sim/watch.py --design latch_tethered_front_swing --spring 13 --live --garden --no-hud
+                                                                     # showcase: garden, nothing on screen
     .venv/bin/python sim/watch.py --mode bound --seconds 6     # -> results/*.gif
     .venv/bin/python sim/watch.py --preset before_after --spring 10 --mode bound   # side by side GIF
     .venv/bin/python sim/watch.py --preset level2    # side by side: spring 7 vs 13 vs 13 without control laws
@@ -47,6 +54,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from build_model import build_named
+from garden import garden_xml
 from config import DEFAULT_DESIGN, DESIGNS, RESULTS_DIR, model_path
 from controller import BaselineController
 from hop import BoundCommand, HopCommand
@@ -61,6 +69,7 @@ SHOVE_TIME = 0.5  # s each shove lasts
 SHOVE_HEIGHT = 0.055  # m above the torso origin where the shove lands (top of the shell)
 SHOVE = dict(newtons=0.0, side=False)  # set from --shove / --shove-side
 RAIBERT = dict(height_cm=None, speed_cm_s=None)  # bound targets, set from --height / --speed
+SCENE = dict(garden=False)  # --garden
 
 
 BUILT = set()  # stiffer-spring models built for this run, deleted at the end
@@ -81,8 +90,9 @@ def design_for(design, spring):
 def make_bunny(design, spring, seed, controller=True):
     """controller False: BaselineController, with no control laws."""
     name = design_for(design, spring)
+    xml = garden_xml(model_path(name).read_text()) if SCENE["garden"] else None
     bunny = make_uncertain_bunny(name, random_uncertainty(np.random.default_rng(seed)), sensor_seed=seed,
-                                 controller_class=None if controller else BaselineController)
+                                 controller_class=None if controller else BaselineController, xml=xml)
     bunny.reset_to_crouch()
     return bunny
 
@@ -177,15 +187,17 @@ def aim_camera(viewer, bunny, camera, first):
         cam.azimuth += 0.05 * ((target - cam.azimuth + 180) % 360 - 180)
 
 
-def live(design, spring, mode, seed, seconds, controller=True, plots=True, camera="chase"):
+def live(design, spring, mode, seed, seconds, controller=True, plots=True, camera="chase", hud=True):
     import mujoco.viewer
     from live_plots import LivePlots
     bunny = make_bunny(design, spring, seed, controller)
     name = 'BunnyController' if controller else 'BaselineController (no control laws)'
     print(f"{design}, spring {spring:g}, {mode}, robot {seed}, {name}")
+    plots = plots and hud
     graphs = LivePlots(f"{name.split()[0]}, spring {spring:g}") if plots else None
-    with mujoco.viewer.launch_passive(bunny.model, bunny.data, show_left_ui=not plots,
-                                      show_right_ui=not plots) as viewer:
+    panels = hud and not plots  # MuJoCo's own side panels, when the graphs aren't using the space
+    with mujoco.viewer.launch_passive(bunny.model, bunny.data, show_left_ui=panels,
+                                      show_right_ui=panels) as viewer:
         with viewer.lock():
             aim_camera(viewer, bunny, camera, first=True)
         wall_start = time.time()
@@ -244,6 +256,10 @@ def main():
     parser.add_argument("--seed", type=int, default=0, help="which randomized robot")
     parser.add_argument("--live", action="store_true", help="open the 3D viewer instead of writing a GIF")
     parser.add_argument("--no-plots", action="store_true", help="--live without the live graphs")
+    parser.add_argument("--no-hud", action="store_true",
+                        help="--live with nothing on screen but the scene: no graphs, stats or viewer panels")
+    parser.add_argument("--garden", action="store_true",
+                        help="dress the scene as a mystical garden (looks only: physics unchanged; see garden.py)")
     parser.add_argument("--camera", default="chase", choices=("chase", "follow", "free"),
                         help="--live view: chase (side view, turns with it), follow (fixed direction), free")
     parser.add_argument("--no-controller", action="store_true",
@@ -252,6 +268,7 @@ def main():
     on = not args.no_controller
     SHOVE.update(newtons=args.shove, side=args.shove_side)
     RAIBERT.update(height_cm=args.height, speed_cm_s=args.speed)
+    SCENE.update(garden=args.garden)
 
     RESULTS_DIR.mkdir(exist_ok=True)
     if args.preset == "before_after":
@@ -264,7 +281,7 @@ def main():
         record(p["panels"], p["seconds"], p["slowmo"], RESULTS_DIR / f"watch_{args.preset}_robot{args.seed}.gif", args.seed)
     elif args.live:
         live(args.design, args.spring, args.mode, args.seed, args.seconds if args.seconds != 6.0 else 1e9, on,
-             plots=not args.no_plots, camera=args.camera)
+             plots=not args.no_plots, camera=args.camera, hud=not args.no_hud)
     else:
         label = f"spring {args.spring:g}, {args.mode}{'' if on else ', no control laws'}"
         name = f"watch_k{args.spring:g}_{args.mode}{'' if on else '_baseline'}_robot{args.seed}.gif"

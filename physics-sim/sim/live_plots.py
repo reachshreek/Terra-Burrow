@@ -24,7 +24,7 @@ WHITE, YELLOW, CYAN, GREY = (1.0, 1.0, 1.0), (1.0, 0.85, 0.2), (0.3, 0.8, 1.0), 
 # title, y range (None = fit to the data), [(line name, colour)]
 GRAPHS = [
     ("pitch / roll (deg)", (-60.0, 60.0), [("pitch", WHITE), ("pitch est.", YELLOW), ("roll", CYAN)]),
-    ("torso height (cm)", (0.0, 40.0), [("height", WHITE)]),
+    ("torso height (cm)", (0.0, 80.0), [("height", WHITE)]),
     ("heading (deg)", None, [("true", WHITE), ("robot's estimate", YELLOW)]),
     ("ground speed (cm/s)", (0.0, 120.0), [("speed", WHITE)]),
 ]

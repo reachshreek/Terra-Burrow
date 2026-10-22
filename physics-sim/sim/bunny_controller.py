@@ -42,7 +42,7 @@ from controller.bound_model import best_command, fit_model, possible_pushes
 # --- 1. Front-lead feedforward ---
 # Step test (16 robots, Pico timers): upright with a 0 / 15 / 30 ms lead was 100/100/100% at
 # 7 N·m/rad, 100/100/94% at 10, and 31/94/75% at 13. Costs ~20% of distance at 13.
-FRONT_LEAD = 0.05  # s
+FRONT_LEAD = 0.05 # s
 
 # --- 2. Steered bounding ---
 MAX_TURN_DEG = 20.0  # most body turn asked of one bound hop
@@ -61,7 +61,6 @@ ATTITUDE_WHEN = "landing"  # "landing": from touchdown until the hop is done; "s
 SWING_SLEW = 2.0  # rad/s, how fast the swing base moves while the feet are planted
 SWING_READY = math.radians(3)  # launch only once both swings are this close to their goal
 LOWEST_PUSH = 0.3  # the height loop never asks for less than this
-
 
 @dataclass
 class TurnHop:
