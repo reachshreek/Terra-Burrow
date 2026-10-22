@@ -211,6 +211,15 @@ class RobotHardware:
         self.slack = math.radians(design.latch_spring_slack_angle_deg)
         self.peak_current = 0.0
 
+        if design.front_swing:  # made last, so a seed draws the same robot with or without them
+            for s in SIDES:
+                name = f"front_swing_{s}"
+                self.joints[name] = joint(name)
+                self.actuators[name] = nid(mujoco.mjtObj.mjOBJ_ACTUATOR, f"front_swing_servo_{s}")
+                self.servos[name] = BusServo(servo_specs[name].spec_copy(linkage_ratio=1.0), 0.0, rng)
+                self.qpos[name] = model.jnt_qposadr[self.joints[name]]
+                self.qvel[name] = model.jnt_dofadr[self.joints[name]]
+
     # --- controller interface ---
 
     def sample(self):

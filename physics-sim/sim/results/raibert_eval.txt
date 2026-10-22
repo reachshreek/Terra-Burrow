@@ -1,0 +1,15 @@
+bounding 10 hops, 36 robots          falls   ground  liftoff true / est   height
+  spring 10  current (no swing)              1/36    35.2    88.0 /  86.7      15.4
+  spring 10  Raibert, no targets             0/36    24.1    93.6 /  89.2      13.2
+  spring 10  Raibert, height 10 cm           0/36    22.0    86.7 /  85.7      10.3
+  spring 10  Raibert, speed 105 cm/s         0/36    26.2   101.8 / 100.5      12.8
+  spring 10  Raibert, height 10 + speed 95   0/36    23.1    92.1 /  90.6      10.2
+  spring 13  current (no swing)             16/36    42.0   104.0 /  96.3      20.7
+  spring 13  Raibert, no targets             2/36    27.5   110.1 / 103.9      17.9
+  spring 13  Raibert, height 10 cm           1/36    20.9    95.8 /  90.5      10.3
+  spring 13  Raibert, speed 105 cm/s         6/36    26.8   112.9 / 102.2      17.7
+  spring 13  Raibert, height 10 + speed 95   2/36    20.9    97.3 /  93.9      10.2
+
+tracking, spring 10, front-swing design, mean over robots, hop by hop
+  height 9 cm       13.4  10.8  10.0   9.3   9.4   9.2   9.0   8.9   9.1   9.0   9.1   8.8
+  speed 100 cm/s    89.8  89.1  92.6  96.8  97.4  99.9  98.3 100.9 100.7 100.6 101.5 100.8

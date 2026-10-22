@@ -10,6 +10,7 @@ overrides:
   retime_hop(plan)           -> HopPlan    last look at a plan, at the moment of launch
   ready_to_launch(inputs, bounding) -> bool   when to fire
   front_leg_goals(goals, inputs) -> goals  front-leg servo goals, every tick
+  front_swing_goals(inputs)  -> goals      front shoulder swing servos, every tick (front_swing designs)
   on_hop_finished(record)                  what the robot measured, after each hop
 
 Their defaults here reproduce the controller as it was: do exactly what the
@@ -20,13 +21,17 @@ and run the front legs' fixed push/tuck/reach/level sequence.
 import math
 
 from .estimator import STILL_TIME, Estimator
-from .interface import (DT, SIDES, BoundCommand, HopCommand, HopPlan, HopRecord, Inputs, Outputs)
-from .legs import FREE_FALL_BELOW_G, TOUCHDOWN_ABOVE_G, FrontLegLogic, LatchLegLogic
+from .interface import (DT, SIDES, BoundCommand, HopCommand, HopPlan, HopRecord, Inputs, Outputs,
+                        ServoCommand)
+from .legs import FREE_FALL_BELOW_G, FrontLegLogic, LatchLegLogic
 
 MAX_WIND_TIME = 3.0  # s, fire anyway after this
 SETTLE_STILL = 0.4  # s of IMU stillness before a hop from standing
 SETTLE_MAX = 2.0  # s, hop anyway after this
 LAND_MIN = 0.5  # s after firing before a hop can count as finished
+# Touchdown, for the HopRecord: reeling the rear legs back in mid-flight jolts the body
+# 1.8-2.4 g, real landings 5 g and up. (The front legs' own TOUCHDOWN_ABOVE_G is lower.)
+RECORD_TOUCHDOWN_G = 3.5
 HOP_MAX = 3.0  # s after firing, give up waiting to be still
 
 # Bounding: relaunch out of each landing
@@ -81,6 +86,9 @@ class BaselineController:
     def front_leg_goals(self, goals: dict, inputs: Inputs) -> dict:
         return goals
 
+    def front_swing_goals(self, inputs: Inputs) -> dict:
+        return {s: ServoCommand(0.0) for s in SIDES}
+
     def on_hop_finished(self, record: HopRecord):
         pass
 
@@ -112,6 +120,7 @@ class BaselineController:
         roll, pitch = self.estimator.roll_pitch()
         self.record = HopRecord(self.plan, launch_pitch=pitch, launch_roll=roll)
         self.launch_yaw = self.estimator.yaw()
+        self.estimator.reset_velocity()
         self.hop_time = 0.0
         self.set_status("hopping")
 
@@ -127,8 +136,9 @@ class BaselineController:
             if g < FREE_FALL_BELOW_G:
                 r.liftoff_time, r.liftoff_pitch = self.hop_time, pitch
                 r.liftoff_pitch_rate, r.liftoff_roll_rate = est.gyro[1], est.gyro[0]
+                r.liftoff_speed, r.liftoff_climb = est.forward_speed(self.launch_yaw), est.velocity[2]
         elif math.isnan(r.touchdown_time):
-            if g > TOUCHDOWN_ABOVE_G or any(inputs.foot_switch.values()):
+            if g > RECORD_TOUCHDOWN_G or any(inputs.foot_switch.values()):
                 r.touchdown_time, r.touchdown_pitch, r.touchdown_roll = self.hop_time, pitch, roll
                 r.touchdown_pitch_rate = est.gyro[1]
         if not math.isnan(r.liftoff_time):
@@ -205,6 +215,9 @@ class BaselineController:
         goals = self.front.tick(est, {s: pos.get(f"front_{s}") for s in SIDES})
         for s, command in self.front_leg_goals(goals, inputs).items():
             servo[f"front_{s}"] = command
+        if self.design.front_swing:
+            for s, command in self.front_swing_goals(inputs).items():
+                servo[f"front_swing_{s}"] = command
 
         roll, pitch = est.roll_pitch()
         status = "starting" if self.waiting_command is not None else self.status

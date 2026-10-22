@@ -3,7 +3,7 @@
 LatchLegLogic   rear leg, wind-and-latch: wind (or unwind) to a ratchet tooth,
                 trip the sear to fire, re-arm and reel back in during flight
 FrontLegLogic   servo front legs: push at takeoff, tuck, reach before landing,
-                then level the body with a roll/pitch PD loop on the IMU
+                then stance (bunny_controller.py levels the body from there)
 """
 
 import math
@@ -167,15 +167,10 @@ FREE_FALL_BELOW_G = 0.3  # touchdown = free fall, then a spike
 TOUCHDOWN_ABOVE_G = 1.8
 MAX_REACH_TIME = 0.6  # s
 
-PITCH_KP = 0.12  # m of leg length per rad of nose-down pitch
-PITCH_KD = 0.006  # m per rad/s
-ROLL_KP = 0.10  # m per rad of roll (high side shortens, low side lengthens)
-ROLL_KD = 0.005  # m per rad/s
-MAX_LENGTH_CHANGE = 0.025  # m
-
 
 class FrontLegLogic:
-    """Both servo front legs: push, tuck, reach, then leveled stance."""
+    """Both servo front legs: push, tuck, reach, then stance (held at the stance angle;
+    the controller's front_leg_goals hook can change that, e.g. to level the body)."""
 
     def __init__(self, design, stance_angle):
         self.leg_length = design.front_thigh_length + design.front_shin_length
@@ -203,20 +198,9 @@ class FrontLegLogic:
     def length_to_angle(self, length):
         return math.acos(np.clip(length / self.leg_length, 0.0, 1.0))
 
-    def leveled(self, estimator):
-        if not estimator.ready():
-            return {s: self.stance for s in SIDES}
-        roll, pitch = estimator.roll_pitch()
-        roll_rate, pitch_rate = estimator.gyro[0], estimator.gyro[1]
-        base = self.leg_length * math.cos(self.stance)
-        pitch_change = PITCH_KP * pitch + PITCH_KD * pitch_rate
-        roll_change = ROLL_KP * roll + ROLL_KD * roll_rate
-
-        out = {}
-        for side, sign in (("left", -1), ("right", +1)):
-            change = np.clip(pitch_change + sign * roll_change, -MAX_LENGTH_CHANGE, MAX_LENGTH_CHANGE)
-            out[side] = self.length_to_angle(base + change)
-        return out
+    def stance_length(self):
+        """Hip-to-foot height of each front leg at the stance angle."""
+        return self.leg_length * math.cos(self.stance)
 
     def tick(self, estimator, positions):
         self.time += DT
@@ -244,5 +228,5 @@ class FrontLegLogic:
             if (self.felt_free_fall and g > TOUCHDOWN_ABOVE_G) or self.time > MAX_REACH_TIME:
                 self.set_phase("stance")
         else:
-            goals = self.leveled(estimator)
+            goals = {s: self.stance for s in SIDES}
         return {s: ServoCommand(float(np.clip(goals[s], *self.hip_range))) for s in SIDES}

@@ -28,7 +28,7 @@
 
     <body name="torso" pos="0 0 0.0995984">
       <freejoint name="root"/>
-      <inertial pos="-0.00202562 0 -0.00439151" mass="1.249" fullinertia="0.0021708 0.00752565 0.00791825 0 -0.000590939 0"/>
+      <inertial pos="-0.00134508 0 -0.000988791" mass="1.249" fullinertia="0.00217242 0.00769588 0.00808686 0 -0.00101264 0"/>
       <geom name="torso_shell" type="ellipsoid" size="0.14 0.065 0.055" rgba="0.95 0.93 0.9 1"/>
       <geom name="head" type="sphere" pos="0.12 0 0.05" size="0.045" rgba="0.95 0.93 0.9 1"/>
       <geom name="ear_left" type="capsule" fromto="0.11 0.02 0.08 0.08 0.035 0.17" size="0.012"
@@ -63,7 +63,11 @@
         </body>
       </body>
       
-      <body name="front_leg_left" pos="0.1 0.05 -0.03">
+      <body name="front_swing_left" pos="0.1 0.05 -0.03">
+        <joint name="front_swing_left" type="hinge" axis="0 -1 0" range="-0.523599 0.523599"
+               armature="0.002" damping="0.01"/>
+        
+      <body name="front_leg_left" pos="0 0 0">
         <joint name="front_spring_left" type="slide" axis="0 0 1" range="0 0.03"
                stiffness="1500.0" springref="0" damping="30.0"/>
         <inertial pos="0 0 -0.0243939" mass="0.033" fullinertia="8.32955e-06 8.32955e-06 7.5e-07 0 0 0"/>
@@ -80,8 +84,13 @@
           </body>
         </body>
       </body>
+      </body>
       
-      <body name="front_leg_right" pos="0.1 -0.05 -0.03">
+      <body name="front_swing_right" pos="0.1 -0.05 -0.03">
+        <joint name="front_swing_right" type="hinge" axis="0 -1 0" range="-0.523599 0.523599"
+               armature="0.002" damping="0.01"/>
+        
+      <body name="front_leg_right" pos="0 0 0">
         <joint name="front_spring_right" type="slide" axis="0 0 1" range="0 0.03"
                stiffness="1500.0" springref="0" damping="30.0"/>
         <inertial pos="0 0 -0.0243939" mass="0.033" fullinertia="8.32955e-06 8.32955e-06 7.5e-07 0 0 0"/>
@@ -97,6 +106,7 @@
             <geom name="front_foot_right" type="sphere" pos="0 0 -0.045" size="0.012" rgba="0.2 0.2 0.2 1"/>
           </body>
         </body>
+      </body>
       </body>
     </body>
   </worldbody>
@@ -116,14 +126,16 @@
   <actuator>
     <!-- Hip torque from each ST3025, through the winder gears.
          The torque-speed limits are applied in servo.py. -->
-    <motor name="servo_left" joint="hip_left" ctrlrange="-15.4171 15.4171"/>
-    <motor name="servo_right" joint="hip_right" ctrlrange="-15.4171 15.4171"/>
+    <motor name="servo_left" joint="hip_left" ctrlrange="-10.792 10.792"/>
+    <motor name="servo_right" joint="hip_right" ctrlrange="-10.792 10.792"/>
     <!-- Latch-drive springs. legs.py computes the torque from the spring stretch. -->
-    <motor name="spring_left" joint="hip_left" ctrlrange="-13.8754 13.8754"/>
-    <motor name="spring_right" joint="hip_right" ctrlrange="-13.8754 13.8754"/>
+    <motor name="spring_left" joint="hip_left" ctrlrange="-9.71276 9.71276"/>
+    <motor name="spring_right" joint="hip_right" ctrlrange="-9.71276 9.71276"/>
     <!-- Front-leg ST3025s, direct drive. The torque-speed limits are applied in servo.py. -->
     <motor name="front_servo_left" joint="front_hip_left" ctrlrange="-3.92 3.92"/>
     <motor name="front_servo_right" joint="front_hip_right" ctrlrange="-3.92 3.92"/>
+    <motor name="front_swing_servo_left" joint="front_swing_left" ctrlrange="-3.92 3.92"/>
+    <motor name="front_swing_servo_right" joint="front_swing_right" ctrlrange="-3.92 3.92"/>
   </actuator>
   <!-- MPU-6050 (HAL2-008). hardware.py adds its noise, bias and range limits. -->
   <sensor>
@@ -132,6 +144,6 @@
   </sensor>
 
   <keyframe>
-    <key name="crouch" qpos="0 0 0.0995984 1 0 0 0 1.13446 -2.26893 1.13446 -2.26893 0 0.904906 -1.80981 0 0.904906 -1.80981"/>
+    <key name="crouch" qpos="0 0 0.0995984 1 0 0 0 1.13446 -2.26893 1.13446 -2.26893 0 0 0.904906 -1.80981 0 0 0.904906 -1.80981"/>
   </keyframe>
 </mujoco>

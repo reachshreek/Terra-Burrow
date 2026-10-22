@@ -24,8 +24,8 @@ legs, battery) and the scripts that only they used were removed; they're in git 
 | `part_masses.csv` | Mass and position for every BOM line (keyed by BOM ID). **Most masses are estimates.** Replace them with weighed values as parts arrive. |
 | `config.py` | Geometry, servo specs, spring, ratchet and release-servo values. |
 | `build_model.py` | BOM + part masses + config → `bunny_latch_tethered_front.xml`. Warns if a BOM line has no mass entry. |
-| `bunny_controller.py` | **The controller.** `BunnyController`'s control laws on top of the baseline: front-lead feedforward, steered bounding. See "Controller" below. |
-| `controller/` | The machinery under it, run once per 200 Hz tick as `outputs = controller.update(inputs)`. `interface.py`: Inputs, Outputs, commands, `HopPlan`, `HopRecord`. `estimator.py`: attitude filter. `legs.py`: rear latch (wind/unwind/fire/re-arm) and front-leg phase logic, including the leveling PD. `baseline.py`: `BaselineController`, the hop and bounding sequencing with no control laws, and the hooks `bunny_controller.py` overrides. `bound_model.py`: the steering model (fit from the bound map, inverted by brute force). |
+| `bunny_controller.py` | **The controller.** `BunnyController`'s control laws on top of the baseline: front-lead feedforward, steered bounding, Raibert-style height / speed / attitude loops. See "Controller" below. |
+| `controller/` | The machinery under it, run once per 200 Hz tick as `outputs = controller.update(inputs)`. `interface.py`: Inputs, Outputs, commands, `HopPlan`, `HopRecord`. `estimator.py`: attitude filter and launch-to-landing velocity. `legs.py`: rear latch (wind/unwind/fire/re-arm) and front-leg phase logic (push, tuck, reach, stance). `baseline.py`: `BaselineController`, the hop and bounding sequencing with no control laws, and the hooks `bunny_controller.py` overrides. `bound_model.py`: the steering model (fit from the bound map, inverted by brute force). |
 | `hardware.py` | The robot's parts between controller and physics, no decisions: MPU-6050 (bias, noise, mounting error, range), ST3025s on the bus (command latency, their own encoder-based position loops via `servo.py`), MG90D release servos on the PCA9685 (PWM frames + travel time), the ratchet and pawl, foot switches. |
 | `servo.py` | ST3025 model: position control limited by the torque-speed line, running on its own 12-bit encoder (differenced speed, deadband, 1 kHz loop, proportional only). The host only sees the position it reports over the bus. |
 | `legs.py` | Latch sizing helpers: spring energy, pawl force, winder gearing, wind-up time. |
@@ -36,6 +36,7 @@ legs, battery) and the scripts that only they used were removed; they're in git 
 | `level2_big_hops.py` | Level 2: stiffer latch springs (bigger hops), with and without the control laws. → `results/level2_big_hops.txt` |
 | `level3_bounding.py` | Level 3: bounding vs one hop at a time, with and without the control laws. `--spring`. → `results/level3_bounding*.txt` |
 | `controller_eval.py` | Scores `bunny_controller.py` against the baseline on big single hops and bounding, with the release servos on the PCA9685 and on Pico timers. → `results/controller_eval.txt` |
+| `raibert_eval.py` | Raibert loops on the front-swing design vs the current controller: falls, speed and height at springs 10 and 13, and the loops tracking targets hop by hop. → `results/raibert_eval.txt` |
 | `agility_eval.py` | Agility: straight bounding speed, time to turn 90° and 180°, and a ±30° slalom, baseline vs BunnyController (steered bounding). `--spring 10`. → `results/agility_eval*.txt` |
 | `firmware/` | **The robot's firmware, written as it would be flashed.** `main.py`: boot (gyro calibration), then the 200 Hz loop read → convert → `controller.update` → convert → write → sleep. `drivers.py`: raw counts/ticks/pulses/pins ↔ physics units. `robot_config.py`: the wiring and calibration sheet. Talks only to a Hal. See "Firmware dev environment" below. |
 | `sim_hal.py` | The simulated robot as the firmware sees it: raw MPU-6050 counts, ST3025 encoder ticks (with occasional read timeouts), release-servo pulse widths, active-low bouncing foot switches, a µs clock whose `sleep_until_us` runs the physics, one-shot timers, and a serial link to the host. |
@@ -61,6 +62,8 @@ robot: its own IMU errors, release-servo speeds, PWM phase and command latencies
 .venv/bin/python sim/bound_map.py --spring 10                     # bound map for a stiffer spring
 .venv/bin/python sim/level2_big_hops.py                           # bigger hops (~2 min)
 .venv/bin/python sim/level3_bounding.py --spring 10               # bounding (~2 min)
+.venv/bin/python sim/raibert_eval.py                              # Raibert loops vs the current controller (~6 min)
+.venv/bin/mjpython sim/watch.py --design latch_tethered_front_swing --spring 13 --live --height 10
 .venv/bin/python sim/run_firmware.py --do "hop 1 1 0" --do "steer 90 8"  # the firmware's main loop on a sim robot
 ```
 
@@ -147,14 +150,54 @@ right way. The slalom flips the order every 3 hops, faster than ~20°/hop can fo
 ## Controller (`bunny_controller.py`)
 
 `BaselineController` (`controller/baseline.py`) runs the same machinery with none of these laws: every
-hop exactly as commanded, front legs pushing with the rear, no steering. That's the "before" for
-`--no-controller`. The machinery both share: the servos' own position loops, the attitude estimator, the
-front-leg leveling PD in stance, and the rear-latch and front-leg state machines.
+hop exactly as commanded, front legs pushing with the rear and holding their stance angle (no leveling), no
+steering. That's the "before" for `--no-controller`. The machinery both share: the servos' own position loops,
+the attitude estimator, and the rear-latch and front-leg state machines.
 
 1. **Front-lead feedforward.** The front legs push `FRONT_LEAD` (now 50 ms; the tables here were run at 30 ms with a bounding ramp) before the rear releases.
    Step test: upright with a 0 / 15 / 30 ms lead was 100/100/100% at spring 7, 100/100/94% at 10,
    and 31/94/75% at 13.
 2. **Steered bounding.** A heading loop, one correction per bound hop (see "Agility" above).
+3. **Raibert-style three-part control** (needs the front shoulder swing, below). Marc Raibert's hopping
+   controller splits hopping into three loops; here each runs once per hop or every tick:
+   - **Height:** "flight-time height" from the IMU, `h = g T² / 8` (it lands crouched, lower than it took
+     off, so this reads a few cm above the torso's true rise at spring 13); next push
+     `+= HEIGHT_GAIN · (h* − h)` (`BoundCommand.height_cm`). Works on either design.
+   - **Speed:** forward speed at liftoff, from the accelerometer integrated over the push (zeroed at each
+     launch: landings spike past the IMU's 16 g range); next launch's front-foot placement
+     `+= SPEED_GAIN · (v* − v)` (`BoundCommand.speed_cm_s`). Feet further forward at launch = faster,
+     ~0.8 cm/s per degree. It only works upward from 0°: feet back past −5° tipped spring-13 robots
+     over, so to go slower ask for a lower height.
+   - **Attitude:** in flight the front feet are placed `SWING_TOUCHDOWN_DEG` (28°) forward for the
+     landing; after touchdown the shoulder servos torque the body level through the planted feet,
+     `swing = base + ATTITUDE_KP · pitch + ATTITUDE_KD · pitch_rate`. Only during the landing: run
+     through the push, it fought the launch and killed the hop.
+
+   Most of the gain is the landing placement: feet 15° forward alone took spring-10 bounding on the
+   swing design from 5/12 falls to 0/24. `raibert_eval.py` (36 robots, `results/raibert_eval.txt`):
+
+   | Bounding 10 hops | Falls, spring 10 | Falls, spring 13 | Ground speed, spring 13 |
+   |---|---|---|---|
+   | Current design, laws 1–2 | 1/36 | 16/36 | 42 cm/s |
+   | Front swing + Raibert, no targets | 0/36 | 2/36 | 28 cm/s |
+   | ...+ 10 cm height target | 0/36 | **1/36** | 21 cm/s |
+
+   The cost is speed: the feet-forward landing brakes every hop and the swing adds 200 g. The loops
+   track: a 9 cm height target settles from 13.4 cm in ~4 hops; a 100 cm/s speed target from 93 in ~6.
+   Watch it: `watch.py --design latch_tethered_front_swing --spring 13 --live --height 10` (the stats
+   panel shows each loop's last measurement against its target).
+
+Touchdown for the `HopRecord` needs 3.5 g (`RECORD_TOUCHDOWN_G`) or a foot switch: reeling the rear legs in
+mid-flight jolts the body 1.8–2.4 g, which at the old 1.8 g threshold ended most flights early (hop heights
+of 0–6 cm in the stats). The front legs' reach → stance switch still uses 1.8 g: raising it too made
+spring-13 bounding on the swing design worse (2/36 → 6/36 falls).
+
+**Front shoulder swing (`latch_tethered_front_swing`, `front_swing=True`).** The front knee linkage keeps
+each foot straight under its hip, so the front legs can only change length, not place a foot. This adds a
+fore/aft hinge at each shoulder (range ±30°, + = foot forward), driven by another ST3025 (HAL2-068, 85 g
+each, on the bus with the others) through a printed bracket and bearing (HAL2-069, 15 g), which then
+carries the front hip servo. +200 g total (1737 → 1937 g). The shoulder servo has to hold the landing:
+the front foot takes the landing ~9 cm below the shoulder.
 
 `controller_eval.py`, 12 randomized robots the maps never saw:
 

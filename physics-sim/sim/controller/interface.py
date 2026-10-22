@@ -34,6 +34,9 @@ class BoundCommand:
     heading_deg: float | None = None  # steer: bound toward this heading (the robot's own yaw estimate,
     #                                   0 = where it faced at power-up, + = left). None = every hop straight
     distance_cm: float | None = None  # steer: each hop's length (None = what `push` gives)
+    # Raibert-style control (bunny_controller.py, designs with front_swing). None = that loop is off.
+    speed_cm_s: float | None = None  # forward speed to hold, by placing the front feet
+    height_cm: float | None = None  # hop height to hold (from flight time), by choosing the rear teeth
 
 
 @dataclass
@@ -86,6 +89,8 @@ class HopRecord:
     liftoff_pitch: float = math.nan  # rad
     liftoff_pitch_rate: float = math.nan  # rad/s (gyro y)
     liftoff_roll_rate: float = math.nan  # rad/s (gyro x)
+    liftoff_speed: float = math.nan  # m/s forward (along the heading at launch), from the integrated accelerometer
+    liftoff_climb: float = math.nan  # m/s up, the same way
     touchdown_time: float = math.nan  # s after launch, first impact after free fall
     touchdown_pitch: float = math.nan
     touchdown_roll: float = math.nan
@@ -98,3 +103,8 @@ class HopRecord:
     @property
     def flight_time(self):
         return self.touchdown_time - self.liftoff_time
+
+    @property
+    def hop_height(self):
+        """m, apex height above where it took off, from flight time (ballistic, landing at takeoff height)."""
+        return G * self.flight_time ** 2 / 8

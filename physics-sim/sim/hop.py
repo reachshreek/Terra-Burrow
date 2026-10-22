@@ -74,6 +74,8 @@ class Bunny:
         self.front_stance = front_stance_angle(design)
         self.controller_class = controller_class
         names = [f"rear_{s}" for s in SIDES] + [f"front_{s}" for s in SIDES]
+        if design.front_swing:
+            names += [f"front_swing_{s}" for s in SIDES]
         self.servo_specs = {n: servo_from_design(design) for n in names}
         self.servo_specs.update(servo_specs or {})
         self.sensor_seed = sensor_seed

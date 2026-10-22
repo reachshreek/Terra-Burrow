@@ -124,7 +124,25 @@ class LivePlots:
             ("yaw drift", f"{self.series[2][1][-1] - self.series[2][0][-1]:+.1f} deg" if self.t else "-"),
             ("falls", str(self.falls)),
         ]
+        rows += self.raibert_rows(bunny)
         return "\n".join(r[0] for r in rows), "\n".join(r[1] for r in rows)
+
+    @staticmethod
+    def raibert_rows(bunny):
+        """The Raibert loops' last measurement against their target (BunnyController, BoundCommand.height_cm / speed_cm_s)."""
+        c = bunny.controller
+        bound = getattr(c, "bound", None)
+        if bound is None or not c.history or (bound.height_cm is None and bound.speed_cm_s is None):
+            return []
+        last = c.history[-1]
+        rows = []
+        if bound.height_cm is not None:
+            rows.append(("hop height", f"{last.hop_height * 100:.1f} cm  (target {bound.height_cm:g})"))
+            rows.append(("rear push", f"{last.plan.push_left:.2f}"))
+        if bound.speed_cm_s is not None:
+            rows.append(("liftoff speed", f"{last.liftoff_speed * 100:.0f} cm/s  (target {bound.speed_cm_s:g})"))
+            rows.append(("launch swing", f"{math.degrees(getattr(c, 'swing_launch', 0.0)):+.1f} deg"))
+        return rows
 
     def draw(self, viewer, bunny):
         """Push the figures and the stats panel to the viewer (call right before viewer.sync())."""

@@ -4,6 +4,12 @@ Modes (what the bunny is told to do, over and over, for --seconds):
   hop     one straight full hop, then sit (good in slow motion)
   steps   one hop at a time: wind, sit still, hop, land, repeat
   bound   bounding: relaunch straight out of each landing (BoundCommand)
+  stand   no hops: just stand (use with --shove to test the front-leg leveling PD)
+
+--shove N pushes the torso with N newtons, alternately forward and backward, for
+SHOVE_TIME s every SHOVE_EVERY s, at the top of the shell so it pitches the body. With
+--mode stand it tests the leveling PD on its own: compare with --no-controller, which has no
+leveling (the front legs just hold their stance angle). --shove-side pushes sideways instead (roll).
 
 Each run is a randomized robot like in the sweeps (--seed picks which one; the
 same seed means the same robot and floor every time). The camera follows the
@@ -23,6 +29,8 @@ laws in bunny_controller.py, for a before/after.
 Run (macOS needs mjpython for --live):
     .venv/bin/mjpython sim/watch.py --spring 10 --mode bound --live
     .venv/bin/mjpython sim/watch.py --spring 10 --mode bound --live --no-controller   # the "before"
+    .venv/bin/mjpython sim/watch.py --design latch_tethered_front_swing --spring 10 --live --height 12 --speed 70
+                                                                     # Raibert loops (front shoulder swing)
     .venv/bin/python sim/watch.py --mode bound --seconds 6     # -> results/*.gif
     .venv/bin/python sim/watch.py --preset before_after --spring 10 --mode bound   # side by side GIF
     .venv/bin/python sim/watch.py --preset level2    # side by side: spring 7 vs 13 vs 13 without control laws
@@ -30,6 +38,7 @@ Run (macOS needs mjpython for --live):
 """
 
 import argparse
+import dataclasses
 import math
 import time
 
@@ -47,6 +56,11 @@ from sweep import make_uncertain_bunny, random_uncertainty
 FPS = 20
 WIDTH, HEIGHT = 400, 300
 START_DELAY = 0.4  # s of standing before the first command
+SHOVE_EVERY = 2.0  # s between shoves (--shove)
+SHOVE_TIME = 0.5  # s each shove lasts
+SHOVE_HEIGHT = 0.055  # m above the torso origin where the shove lands (top of the shell)
+SHOVE = dict(newtons=0.0, side=False)  # set from --shove / --shove-side
+RAIBERT = dict(height_cm=None, speed_cm_s=None)  # bound targets, set from --height / --speed
 
 
 BUILT = set()  # stiffer-spring models built for this run, deleted at the end
@@ -56,9 +70,11 @@ def design_for(design, spring):
     if spring == 7.0:
         return design
     name = variant_name(design, spring)
+    if name not in DESIGNS:  # e.g. a stiffer spring on the front-swing design
+        DESIGNS[name] = dataclasses.replace(DESIGNS[design], latch_spring_stiffness=spring)
     if not model_path(name).exists():
-        build_named(name)
-        BUILT.add(name)
+        BUILT.add(name)  # ours to delete at the end
+    build_named(name)  # always: a leftover file could predate edits to the builder or config
     return name
 
 
@@ -71,8 +87,29 @@ def make_bunny(design, spring, seed, controller=True):
     return bunny
 
 
+def shove(bunny):
+    """--shove: push the top of the shell forward, then backward (or left, then right), every SHOVE_EVERY s."""
+    d, t = bunny.data, bunny.data.time
+    d.xfrc_applied[bunny.torso] = 0.0
+    if SHOVE["newtons"] <= 0 or t < START_DELAY + 1.0:
+        return
+    k, phase = divmod(t - START_DELAY - 1.0, SHOVE_EVERY)
+    if phase > SHOVE_TIME:
+        return
+    R = d.xmat[bunny.torso].reshape(3, 3)
+    sign = 1.0 if int(k) % 2 == 0 else -1.0
+    force = sign * SHOVE["newtons"] * R[:, 1 if SHOVE["side"] else 0]  # along the body's own y (side) or x (forward)
+    force[2] = 0.0
+    lever = R @ [0.0, 0.0, SHOVE_HEIGHT] + d.xpos[bunny.torso] - d.xipos[bunny.torso]  # from the body's CoM
+    d.xfrc_applied[bunny.torso, :3] = force
+    d.xfrc_applied[bunny.torso, 3:] = np.cross(lever, force)
+
+
 def drive(bunny, mode):
     """Give the controller its next command when it's ready for one."""
+    shove(bunny)
+    if mode == "stand":
+        return
     if bunny.data.time < START_DELAY or bunny.pending_command is not None or bunny.status != "idle":
         return
     if mode == "hop" and bunny.controller.hops_started == 0:
@@ -80,7 +117,7 @@ def drive(bunny, mode):
     elif mode == "steps":
         bunny.send(HopCommand(1, 1, 0))
     elif mode == "bound":
-        bunny.send(BoundCommand(hops=1000, push=1.0))
+        bunny.send(BoundCommand(hops=1000, push=1.0, **RAIBERT))
 
 
 def side_camera(bunny):
@@ -194,7 +231,14 @@ def main():
     parser.add_argument("--preset", choices=PRESETS)
     parser.add_argument("--design", default=DEFAULT_DESIGN, choices=DESIGNS)
     parser.add_argument("--spring", type=float, default=7.0, choices=SPRINGS)
-    parser.add_argument("--mode", default="bound", choices=("hop", "steps", "bound"))
+    parser.add_argument("--mode", default="bound", choices=("hop", "steps", "bound", "stand"))
+    parser.add_argument("--shove", type=float, default=0.0, metavar="N",
+                        help="push the torso N newtons forward/backward every few seconds (try 6 with --mode stand; past ~10 it tips over)")
+    parser.add_argument("--shove-side", action="store_true", help="--shove sideways (left/right) instead")
+    parser.add_argument("--height", type=float, metavar="CM",
+                        help="bound: hold this hop height (Raibert height loop)")
+    parser.add_argument("--speed", type=float, metavar="CM_S",
+                        help="bound: hold this liftoff speed (Raibert speed loop; needs --design latch_tethered_front_swing)")
     parser.add_argument("--seconds", type=float, default=6.0)
     parser.add_argument("--slowmo", type=float, default=1.0, help="0.5 = half speed (GIF only)")
     parser.add_argument("--seed", type=int, default=0, help="which randomized robot")
@@ -206,6 +250,8 @@ def main():
                         help="BaselineController instead of BunnyController (no control laws), for a before/after")
     args = parser.parse_args()
     on = not args.no_controller
+    SHOVE.update(newtons=args.shove, side=args.shove_side)
+    RAIBERT.update(height_cm=args.height, speed_cm_s=args.speed)
 
     RESULTS_DIR.mkdir(exist_ok=True)
     if args.preset == "before_after":

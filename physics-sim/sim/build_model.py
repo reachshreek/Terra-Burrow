@@ -20,9 +20,14 @@ from legs import peak_spring_torque, winder_gear_ratio
 
 SIDES = {"left": +1, "right": -1}
 
-# part_masses.csv rows can be limited to one build option ("when" column, e.g. "power=battery").
-# This robot's options:
+# part_masses.csv rows can be limited to build options ("when" column, e.g. "power=battery",
+# or several joined by ";"). This robot's options:
 BUILD_OPTIONS = {"drive": "latch", "front_drive": "servo", "power": "tether"}
+
+
+def build_options(design):
+    """BUILD_OPTIONS plus the ones a design can switch (front_swing=yes/no)."""
+    return {**BUILD_OPTIONS, "front_swing": "yes" if design.front_swing else "no"}
 
 
 # ---------------------------------------------------------------------------
@@ -102,16 +107,13 @@ def lump(parts):
     return LumpedBody(total_mass, com, inertia)
 
 
-def row_applies(row):
-    """A row's "when" column limits it to one build option, e.g. "drive=latch"."""
-    condition = row.get("when", "").strip()
-    if not condition:
-        return True
-    setting, value = condition.split("=")
-    return BUILD_OPTIONS[setting] == value
+def row_applies(row, options=BUILD_OPTIONS):
+    """A row's "when" column limits it to build options, e.g. "drive=latch" or "drive=latch;front_swing=yes"."""
+    conditions = [c.strip() for c in row.get("when", "").split(";") if c.strip()]
+    return all(options.get(setting, "no") == value for setting, value in (c.split("=") for c in conditions))
 
 
-def parts_by_body(mass_rows):
+def parts_by_body(mass_rows, options=BUILD_OPTIONS):
     """Turn mass-table rows into PointParts grouped by MuJoCo body name.
 
     "rear_thigh_*" means one copy of the part on each side (left and right).
@@ -123,7 +125,7 @@ def parts_by_body(mass_rows):
         bodies.setdefault(body_name, []).append(part)
 
     for row in mass_rows:
-        if row["sim_body"] == "off_robot" or not row_applies(row):
+        if row["sim_body"] == "off_robot" or not row_applies(row, options):
             continue
         qty = float(row["qty"])
         mass = qty * float(row["mass_each_g"]) / 1000.0
@@ -216,7 +218,9 @@ def front_stance_angle(design):
 
 def front_leg_xml(design, bodies, side):
     length = front_leg_length(design)
-    strut = f"""<body name="front_leg_{side}" pos="{fmt(mirror(design.front_shoulder_pos, side))}">
+    shoulder = fmt(mirror(design.front_shoulder_pos, side))
+    strut_pos = "0 0 0" if design.front_swing else shoulder  # with a swing, the strut hangs from the swing bracket
+    strut = f"""<body name="front_leg_{side}" pos="{strut_pos}">
         <joint name="front_spring_{side}" type="slide" axis="0 0 1" range="0 {design.front_leg_travel}"
                stiffness="{design.front_spring_stiffness}" springref="0" damping="{design.front_spring_damping}"/>
         {inertial_xml(bodies[f"front_leg_{side}"])}"""
@@ -224,7 +228,7 @@ def front_leg_xml(design, bodies, side):
     # sprung strut, with the foot moving straight up and down.
     hip_min, hip_max = (math.radians(a) for a in design.front_hip_range_deg)
     L1, L2 = design.front_thigh_length, design.front_shin_length
-    return f"""
+    leg = f"""
       {strut}
         <body name="front_thigh_{side}">
           <joint name="front_hip_{side}" type="hinge" axis="0 1 0" range="{hip_min:.6g} {hip_max:.6g}"
@@ -238,6 +242,18 @@ def front_leg_xml(design, bodies, side):
             <geom name="front_foot_{side}" type="sphere" pos="0 0 {-L2}" size="{design.foot_radius}" rgba="0.2 0.2 0.2 1"/>
           </body>
         </body>
+      </body>"""
+    if not design.front_swing:
+        return leg
+    # Shoulder swing: the whole leg (shock, thigh, shin) hangs from a bracket that swings
+    # fore/aft about the shoulder. Axis -y so that + = foot forward.
+    swing_min, swing_max = (math.radians(a) for a in design.front_swing_range_deg)
+    return f"""
+      <body name="front_swing_{side}" pos="{shoulder}">
+        <joint name="front_swing_{side}" type="hinge" axis="0 -1 0" range="{swing_min:.6g} {swing_max:.6g}"
+               armature="{design.servo_armature}" damping="0.01"/>
+        {inertial_xml(bodies[f"front_swing_{side}"])}
+        {leg} 
       </body>"""
 
 
@@ -275,6 +291,11 @@ def front_drive_xml(design):
         f'    <motor name="front_servo_{side}" joint="front_hip_{side}" '
         f'ctrlrange="{-design.servo_stall_torque:.6g} {design.servo_stall_torque:.6g}"/>'
         for side in SIDES)
+    if design.front_swing:
+        servos += "\n" + "\n".join(
+            f'    <motor name="front_swing_servo_{side}" joint="front_swing_{side}" '
+            f'ctrlrange="{-design.servo_stall_torque:.6g} {design.servo_stall_torque:.6g}"/>'
+            for side in SIDES)
     return f"""
     <!-- Front-leg linkages, like the rear: knee angle = -2 x hip angle. -->
 {knees}""", f"""
@@ -286,10 +307,11 @@ def build_mjcf(design: BunnyDesign, bodies):
     crouch = math.radians(design.crouch_angle_deg)
     start_height = crouched_torso_height(design) + 0.002
     # Keyframe qpos: torso position + quaternion, then each joint in tree order:
-    # left hip, left knee, right hip, right knee, then each front leg's slide, hip and knee.
+    # left hip, left knee, right hip, right knee, then each front leg's (swing,) slide, hip and knee.
     stance = front_stance_angle(design)
+    front_qpos = ([0] if design.front_swing else []) + [0, stance, -2 * stance]
     crouch_qpos = [0, 0, start_height, 1, 0, 0, 0,
-                   crouch, -2 * crouch, crouch, -2 * crouch, *[0, stance, -2 * stance] * 2]
+                   crouch, -2 * crouch, crouch, -2 * crouch, *front_qpos * 2]
     hip_torque_limit = design.servo_stall_torque * winder_gear_ratio(design)
     pawl_constraints, spring_actuators = latch_xml(design)
     front_knees, front_servos = front_drive_xml(design)
@@ -365,7 +387,7 @@ def build(design: BunnyDesign, path, verbose=True):
     if verbose:
         check_tables_agree(bom_items, mass_rows)
 
-    bodies = parts_by_body(mass_rows)
+    bodies = parts_by_body(mass_rows, build_options(design))
     path.write_text(build_mjcf(design, bodies))
 
     if verbose:

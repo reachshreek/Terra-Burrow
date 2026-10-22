@@ -72,7 +72,10 @@ HAL2-061,off_robot,1,0,no,0,0,0,0,0,0,proposed - 12V wall power supply,power=tet
 HAL2-062,off_robot,1,0,no,0,0,0,0,0,0,proposed - ground base enclosure + ballast,power=tether
 HAL2-063,off_robot,1,0,no,0,0,0,0,0,0,proposed - slip ring swivel,power=tether
 HAL2-064,off_robot,1,0,no,0,0,0,0,0,0,proposed - tether cable,power=tether
-HAL2-065,torso,2,85,yes,95,40,-15,45,25,35,proposed - ST3025 front-leg servo,front_drive=servo
+HAL2-065,torso,2,85,yes,95,40,-15,45,25,35,proposed - ST3025 front-leg servo,front_drive=servo;front_swing=no
+HAL2-065,front_swing_*,1,85,no,-5,0,15,45,25,35,proposed - ST3025 front-leg servo (rides on the swing bracket),front_drive=servo;front_swing=yes
 HAL2-066,front_thigh_*,1,40,no,0,0,-20,15,12,45,proposed - printed front thigh + horn + knee shaft/bearings,front_drive=servo
 HAL2-066,front_shin_*,1,15,no,0,0,-25,12,10,45,proposed - printed front shin,front_drive=servo
 HAL2-067,front_thigh_*,1,10,no,0,0,-15,0,0,0,proposed - front knee linkage rods / clevis,front_drive=servo
+HAL2-068,torso,2,85,yes,100,40,10,45,25,35,proposed - ST3025 front shoulder swing servo,front_swing=yes
+HAL2-069,front_swing_*,1,15,no,0,0,0,30,20,40,proposed - printed front swing bracket + shoulder bearing,front_swing=yes

@@ -24,13 +24,18 @@ def rotation_from_vector(v):
 
 
 class Estimator:
-    """Attitude from the IMU (Mahony complementary filter) and a stillness timer.
+    """Attitude from the IMU (Mahony complementary filter), velocity and a stillness timer.
 
     Roll and pitch are pulled toward the accelerometer's "down" only while the
     robot is still. Yaw has nothing to correct it, so it drifts with gyro bias.
     The filter starts once the robot has sat still for INIT_STILL_TIME, from the
     average accelerometer reading over that time. (Starting from a single sample
     can catch it mid-bounce and begin tens of degrees off.)
+
+    Velocity is the accelerometer, turned into the world frame minus gravity, integrated,
+    and zeroed whenever the robot is still or a hop launches (the robot comes to rest
+    while it winds between hops). Only trust it from a launch to the next landing: a
+    landing can spike past the accelerometer's 16 g range and leave it off.
     """
 
     def __init__(self):
@@ -39,6 +44,7 @@ class Estimator:
         self.gyro = np.zeros(3)
         self.accel = np.array([0, 0, G])
         self.accel_sum = np.zeros(3)  # accelerometer readings during the current still stretch
+        self.velocity = np.zeros(3)  # m/s, world frame (x/y along the power-up heading)
 
     def update(self, gyro, accel):
         self.gyro, self.accel = gyro, accel
@@ -58,6 +64,10 @@ class Estimator:
         self.R = self.R @ rotation_from_vector(omega * DT)
         u, _, vt = np.linalg.svd(self.R)  # re-orthonormalize so rounding doesn't build up
         self.R = u @ vt
+        if self.still_time > STILL_TIME:
+            self.velocity = np.zeros(3)
+        else:
+            self.velocity = self.velocity + (self.R @ accel - np.array([0, 0, G])) * DT
 
     @staticmethod
     def level_from(accel):
@@ -77,6 +87,14 @@ class Estimator:
 
     def yaw(self):
         return 0.0 if self.R is None else math.atan2(self.R[1, 0], self.R[0, 0])
+
+    def reset_velocity(self):
+        self.velocity = np.zeros(3)
+
+    def forward_speed(self, heading=None):
+        """m/s along `heading` (rad, default: the current yaw), horizontal."""
+        heading = self.yaw() if heading is None else heading
+        return math.cos(heading) * self.velocity[0] + math.sin(heading) * self.velocity[1]
 
     def g_felt(self):
         return np.linalg.norm(self.accel) / G

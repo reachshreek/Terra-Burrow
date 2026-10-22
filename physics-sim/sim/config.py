@@ -55,6 +55,11 @@ class BunnyDesign:
     front_shin_length: float = 0.045
     front_full_push_angle_deg: float = 12.0  # hip angle at full extension
     front_hip_range_deg: tuple = (5.0, 85.0)
+    # Optional front shoulder swing (Raibert-style foot placement): another ST3025 per side
+    # (HAL2-068) swings the whole front leg fore/aft about the shoulder on a printed bracket
+    # (HAL2-069), which then carries the front hip servo. Angle + = foot forward.
+    front_swing: bool = False
+    front_swing_range_deg: tuple = (-30.0, 30.0)
 
     # --- Servo: Waveshare ST3025 at 12 V (datasheet values) ---
     servo_stall_torque: float = 3.92  # N·m  (40 kg·cm)
@@ -93,6 +98,7 @@ class BunnyDesign:
 # (level2_big_hops.variant_name, controller_eval.pico) as dataclasses.replace() copies.
 DESIGNS = {
     "latch_tethered_front": BunnyDesign(),
+    "latch_tethered_front_swing": BunnyDesign(front_swing=True),
 }
 DEFAULT_DESIGN = "latch_tethered_front"
 
