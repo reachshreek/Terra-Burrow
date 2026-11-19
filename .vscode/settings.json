@@ -1,0 +1,7 @@
+{
+    "cmake.sourceDirectory": "/Users/derekchen/Desktop/Code/Terra-Burrow/rabbit-firmware",
+    "clangd.arguments": [
+        "--query-driver=${env:HOME}/.pico-sdk/toolchain/*/bin/arm-none-eabi-*",
+        "--compile-commands-dir=${workspaceFolder}/rabbit-firmware/rabbit-firmware/build"
+    ]
+}
