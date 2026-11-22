@@ -1,0 +1,17 @@
+latch_tethered_front, 12 robots each
+
+straight bound, 10 hops      fell      speed   s/hop
+  baseline                   0/12   37.2cm/s   0.81
+  bunny                      0/12   30.3cm/s   0.90
+
+turn 90 (then stop)          fell       time  turn rate  gave up
+  baseline                   0/12     14.3 s       6°/s      5
+  bunny                      0/12      4.7 s      19°/s      1
+
+turn 180 (then stop)         fell       time  turn rate  gave up
+  baseline                   0/12     19.5 s       9°/s      8
+  bunny                      0/12      9.5 s      19°/s      1
+
+slalom ±30°, flip every 3    fell  heading err      speed
+  baseline                   0/12      53.2° rms   35.3cm/s
+  bunny                      0/12      30.5° rms   20.1cm/s

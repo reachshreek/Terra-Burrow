@@ -1,0 +1,10 @@
+Running 360 hops...
+
+  spring  energy   pawl   wind |     baseline: upright  rise   dist  tilt |   bunny_controller: upright  rise   dist  tilt
+    7 N·m   3.0 J  216 N 0.44 s |                 100%   16cm   31cm  21° |                 100%   17cm   31cm  26° |
+   10 N·m   4.3 J  308 N 0.62 s |                  89%   21cm   47cm  30° |                  97%   23cm   46cm  37° |
+   13 N·m   5.6 J  401 N 0.81 s |                  61%   27cm   62cm  39° |                  67%   28cm   62cm  43° |
+   16 N·m   6.8 J  493 N 1.00 s |                  39%   32cm   78cm  44° |                  53%   34cm   75cm  51° |
+   20 N·m   8.6 J  617 N 1.25 s |                  19%   39cm   96cm  55° |                  39%   42cm   95cm  60° |
+
+upright = share of all trials (straight + ±10 ms turns) landing upright; rise/dist/tilt = averages over the upright ones; energy and pawl force per leg
