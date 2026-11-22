@@ -14,9 +14,10 @@ class Servo {
         void setPulse(uint16_t us);      // clamped to [min_us, max_us]
         void setSpeed(float speed);      // -1 (full one way) .. 0 (stop) .. 1 (full the other way)
         void stop() { setPulse(neutral_us); }
+        void off();                      // no pulses at all: the servo goes limp
         uint16_t pulse() const { return pulse_us; }
 
-    private:
+    protected:
         uint pin;
         uint16_t min_us, max_us, neutral_us;
         uint16_t pulse_us = 0;

@@ -35,7 +35,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(rabbit-firmware src/rabbit-firmware.cpp src/imu.cpp src/servo.cpp)
+add_executable(rabbit-firmware src/rabbit-firmware.cpp src/i2c.cpp src/drivers/imu.cpp src/drivers/servo.cpp src/drivers/winder.cpp src/drivers/sear.cpp src/drivers/switch.cpp)
 
 pico_set_program_name(rabbit-firmware "rabbit-firmware")
 pico_set_program_version(rabbit-firmware "0.1")

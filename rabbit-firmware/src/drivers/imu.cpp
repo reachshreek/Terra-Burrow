@@ -1,4 +1,4 @@
-#include "imu.hpp"
+#include "drivers/imu.hpp"
 #include "rabbit-firmware.hpp"
 #include <pico/time.h>
 
@@ -25,7 +25,7 @@ bool IMU::init() {
 bool IMU::whoami() {
     uint8_t reg = Register::WHOAMI, who = 0;  // WHO_AM_I
     if (writei2c(IMU_ADDR, &reg, 1, true) != 1) return false;
-    if (readi2c(IMU_ADDR, &who, 1, false) != 1 || who != 0x6A) return false;
+    if (readi2c(IMU_ADDR, &who, 1, false) != 1 || who != 0x69) return false;
 
     return true;
 }

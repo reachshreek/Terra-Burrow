@@ -1,4 +1,4 @@
-#include "servo.hpp"
+#include "drivers/servo.hpp"
 #include "hardware/pwm.h"
 #include "hardware/clocks.h"
 
@@ -29,4 +29,9 @@ void Servo::setSpeed(float speed) {
     if (speed < -1.0f) speed = -1.0f;
     float span = speed >= 0 ? max_us - neutral_us : neutral_us - min_us;
     setPulse((uint16_t)(neutral_us + speed * span));
+}
+
+void Servo::off() {
+    pulse_us = 0;
+    pwm_set_gpio_level(pin, 0);
 }

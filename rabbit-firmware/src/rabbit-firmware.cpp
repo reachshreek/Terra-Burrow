@@ -1,15 +1,9 @@
 #include "rabbit-firmware.hpp"
-#include "imu.hpp"
-#include "servo.hpp"
+#include "drivers/imu.hpp"
+#include "drivers/servo.hpp"
 #include <hardware/i2c.h>
 
-int writei2c(uint8_t device_addr, uint8_t *src, size_t len, bool nostop) { 
-    return i2c_write_timeout_us(I2C_PORT, device_addr, src, len, nostop, 2000); 
-}
-
-int readi2c(uint8_t device_addr, uint8_t *dst, size_t len, bool nostop) { 
-    return i2c_read_timeout_us(I2C_PORT, device_addr, dst, len, nostop, 2000); 
-}
+int GYRO_BIAS[3] = {0, 0, 0};
 
 int main() {
     stdio_init_all();
@@ -50,7 +44,7 @@ int main() {
         if (imu_ok && imu.dataReady()) imu.readRaw();
 
         for (int i = 0; i < 3; i++) {
-            gyro_r[i] = imu.gyro_raw[i] * 0.070f * 0.0174533f;
+            gyro_r[i] = (imu.gyro_raw[i] - GYRO_BIAS[i]) * 0.070f * 0.0174533f;
             accel_ms2[i] = imu.accel_raw[i] * 0.000488f * 9.80665f;
         }
 
