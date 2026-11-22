@@ -76,7 +76,7 @@ BUILT = set()  # stiffer-spring models built for this run, deleted at the end
 
 
 def design_for(design, spring):
-    if spring == 7.0:
+    if spring == DESIGNS[design].latch_spring_stiffness:
         return design
     name = variant_name(design, spring)
     if name not in DESIGNS:  # e.g. a stiffer spring on the front-swing design
@@ -242,7 +242,7 @@ def main():
     parser = argparse.ArgumentParser(description="Watch the bunny live, or render GIFs.")
     parser.add_argument("--preset", choices=PRESETS)
     parser.add_argument("--design", default=DEFAULT_DESIGN, choices=DESIGNS)
-    parser.add_argument("--spring", type=float, default=7.0, choices=SPRINGS)
+    parser.add_argument("--spring", type=float, choices=SPRINGS, help="rear latch spring, N·m/rad (default: the design's own)")
     parser.add_argument("--mode", default="bound", choices=("hop", "steps", "bound", "stand"))
     parser.add_argument("--shove", type=float, default=0.0, metavar="N",
                         help="push the torso N newtons forward/backward every few seconds (try 6 with --mode stand; past ~10 it tips over)")
@@ -266,6 +266,8 @@ def main():
                         help="BaselineController instead of BunnyController (no control laws), for a before/after")
     args = parser.parse_args()
     on = not args.no_controller
+    if args.spring is None:
+        args.spring = DESIGNS[args.design].latch_spring_stiffness
     SHOVE.update(newtons=args.shove, side=args.shove_side)
     RAIBERT.update(height_cm=args.height, speed_cm_s=args.speed)
     SCENE.update(garden=args.garden)

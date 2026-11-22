@@ -12,10 +12,44 @@ python3 -m venv .venv
 
 ## The robot
 
-One design, `latch_tethered_front` (`config.py`): wind-and-latch rear legs (an ST3025 winds a spring
-through a cord, a ratchet pawl holds it, an MG90D trips the sear), two servo-driven front legs on RC
-shocks, power down a tether. Earlier designs (direct-drive rear legs, spring assist, passive front
-legs, battery) and the scripts that only they used were removed; they're in git history before the cleanup.
+**`bunny_v2` (the default): the robot as built.** From the CAD ("Jumping Robot Version 2") and the
+parts list: all four legs wind-and-latch. Each leg has a winding module (a TD-8135MG turns a gear train
+into a rack that loads two airsoft springs on 6 mm aluminium guide tubes; one "brake" latch at the end of
+the rack), an MG90D trips the latch, the IMU is an LSM6DS3, and Pololu 1404 switches sense the rear feet.
+
+| What changed | In the sim |
+|---|---|
+| Front legs wound and latched too | Built like the rear legs (spring at the hip, pawl, sear), `front_latch_spring_stiffness` |
+| One latch point per leg | One ratchet tooth: every hop is full wind (no height loop) |
+| TD-8135MG: PWM, no position feedback | Commands land on 50 Hz PWM frames; legs wind until a "latch engaged" switch (Pololu 1528) closes |
+| No front hip servo or shoulder swing | Front lead = front sears trip early (`FRONT_LATCH_LEAD`); no Raibert speed/attitude loops |
+| LSM6DS3 | Datasheet noise (7 mdps/√Hz, 180 µg/√Hz) and ±40 mg accelerometer offset (`hardware.IMUS`) |
+
+Tuned on 24 randomized robots × 3 full hops: **rear 10 + front 7 N·m/rad, all four sears together: 99%
+upright, 43 cm**; bounding 10 hops: 3/36 falls at 29 cm/s (the old design: 35 cm/s; the TD-8135MG winds
+slower, 0.91 s against 0.62 s). It's touchy: firing the front 10 ms early drops it to 42%, front springs of
+5 N·m/rad to 38%, no front spring falls every time, and rear 13 peaks at 75%.
+
+Tried on bunny_v2 and removed, because neither helped (72 hops or 36 bounds per setting):
+- **Landing posture:** choosing in flight when each winder reels its leg back in (front legs left out to
+  catch a predicted nose-down landing). Best case rear 13: 69% against 64%, inside the noise; rear 10 got
+  worse. The winders are too slow to change leg length much in a 0.3 s flight.
+- **Launch gate:** relaunching only once the body's pitch rate is below 60…5°/s. No change at all: winding
+  takes ~0.9 s, so the body has long settled by launch.
+- Matching the four sears' trip times (or Pico timers) didn't help rear 13 either. Its falls are mechanical:
+  the front springs have to grow with the rear (rear 13 + front 8: 16/36 bounding falls; + front 7: 24/36).
+
+Placeholders, measure these: the TD-8135MG (no datasheet found; set to 35 kg·cm, 0.15 s/60°, 62 g from the
+nearest TianKongRC models), the airsoft springs' rate (to give 10 N·m/rad at the rear hips and 7 at the
+front, each leg's two springs need k = k_θ / (2 r²) for a lever arm r from rack to hip: 10 N·m/rad on
+a 3 cm arm is 5.6 N/mm per spring), the winding modules' mass (70 g each, guessed), and the leg geometry
+(the CAD has the modules but no legs yet, so the legs are the old design's). The Python firmware mock
+(`run_firmware.py`) still runs the old design.
+
+**`latch_tethered_front`**, the earlier design, which all the results below were run on: wind-and-latch
+rear legs (an ST3025 winds a spring through a cord, a ratchet pawl holds it, an MG90D trips the sear), two
+servo-driven front legs on RC shocks, power down a tether. Earlier designs (direct-drive rear legs, spring
+assist, passive front legs, battery) and the scripts that only they used were removed; they're in git history.
 
 ## Files
 

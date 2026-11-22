@@ -91,8 +91,9 @@ def make_uncertain_bunny(design_name, u: Uncertainty, sensor_seed=0, controller_
     torso = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "torso")
 
     model.geom_friction[floor, 0] = u.floor_friction
-    model.jnt_stiffness[joint("front_spring_left")] *= u.front_spring_scale
-    model.jnt_stiffness[joint("front_spring_right")] *= u.front_spring_scale
+    for side in ("left", "right"):
+        if joint(f"front_spring_{side}") >= 0:  # the front shocks (servo front legs only)
+            model.jnt_stiffness[joint(f"front_spring_{side}")] *= u.front_spring_scale
     model.body_ipos[torso] += np.array(u.com_shift_mm) / 1000.0
     model.body_mass[torso] *= u.mass_scale
     model.body_inertia[torso] *= u.mass_scale

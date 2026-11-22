@@ -1,7 +1,9 @@
 """Per-leg logic: what each leg does in each phase of a hop.
 
-LatchLegLogic   rear leg, wind-and-latch: wind (or unwind) to a ratchet tooth,
-                trip the sear to fire, re-arm and reel back in during flight
+LatchLegLogic   wind-and-latch leg (rear, or front on front_drive="latch"): wind (or
+                unwind) to a ratchet tooth, trip the sear to fire, re-arm and reel
+                back in during flight. Without winder feedback (PWM servos) it winds
+                until the leg's latch switch closes instead
 FrontLegLogic   servo front legs: push at takeoff, tuck, reach before landing,
                 then stance (bunny_controller.py levels the body from there)
 """
@@ -10,6 +12,8 @@ import math
 
 import numpy as np
 
+from legs import latch_spring, tooth_pitch
+
 from .interface import DT, SIDES, ServoCommand
 
 TUCK_TOLERANCE = math.radians(3)  # a push is "done" within this of its end angle
@@ -17,7 +21,9 @@ MAX_PUSH_TIME = 0.3  # s, a leg that never reaches its push angle tucks after th
 RELEASE_WAIT = 0.06  # s; the release servo needs up to a PWM frame plus its travel time to move
 # The winder's position loop is proportional only, so against the spring it stops short of its goal
 # (about 2° at full wind). Aim this far past where the leg needs to get.
-CORD_OVERSHOOT_TEETH = 1.5
+CORD_OVERSHOOT = math.radians(4.5)
+SWITCH_WIND_MAX = 2.5  # s: no feedback, winding gives up waiting for the latch switch after this
+SWITCH_TUCK_MAX = 1.5  # s
 
 
 class LatchLegLogic:
@@ -45,12 +51,11 @@ class LatchLegLogic:
       holding   tucked and resting on the pawl
     """
 
-    def __init__(self, design, name):
+    def __init__(self, design, name, leg="rear"):
         self.name = name
-        self.crouch = math.radians(design.crouch_angle_deg)
-        self.slack = math.radians(design.latch_spring_slack_angle_deg)
-        self.full_push = math.radians(design.full_push_angle_deg)
-        self.pitch = math.radians(design.ratchet_tooth_pitch_deg)
+        _, self.crouch, self.slack = latch_spring(design, leg)
+        self.full_push = math.radians(design.full_push_angle_deg) if leg == "rear" else self.slack
+        self.pitch = tooth_pitch(design, leg)
         self.target = self.crouch
         self.phase = "holding"
         self.time = 0.0
@@ -98,8 +103,10 @@ class LatchLegLogic:
         self.phase = phase
         self.time = 0.0
 
-    def tick(self, position):
+    def tick(self, position, switch=None):
         self.time += DT
+        if position is None and switch is not None:
+            return self.tick_switch(switch)
         if position is None:
             return ServoCommand(self.goal, False), self.release
         half = 0.5 * self.pitch
@@ -114,7 +121,7 @@ class LatchLegLogic:
                 self.set_phase("unload")
 
         if self.phase == "reel_in":
-            self.goal, self.torque_on, self.release = self.target + CORD_OVERSHOOT_TEETH * self.pitch, True, False
+            self.goal, self.torque_on, self.release = self.target + CORD_OVERSHOOT, True, False
             if position > self.target + 0.3 * self.pitch or self.time > 2.0:
                 self.set_phase("seat")
         elif self.phase == "seat":
@@ -124,7 +131,7 @@ class LatchLegLogic:
         elif self.phase == "unload":
             if self.time <= DT:
                 self.unload_tooth = self.tooth_below(position + 0.3 * self.pitch)
-            self.goal, self.torque_on = self.unload_tooth + CORD_OVERSHOOT_TEETH * self.pitch, True
+            self.goal, self.torque_on = self.unload_tooth + CORD_OVERSHOOT, True
             if position > self.unload_tooth + 0.2 * self.pitch or self.time > 0.5:
                 self.set_phase("lift")
         elif self.phase == "lift":
@@ -149,6 +156,33 @@ class LatchLegLogic:
             # Aim at the crouch and stop within TUCK_TOLERANCE, resting on whatever tooth that is
             self.goal, self.torque_on, self.release = self.crouch, True, False
             if position > self.crouch - TUCK_TOLERANCE or self.time > 1.0:
+                self.set_phase("holding")
+        elif self.phase == "holding":
+            self.torque_on, self.release = False, False
+        return ServoCommand(self.goal, self.torque_on), self.release
+
+    def tick_switch(self, latched):
+        """No winder feedback: wind to the crouch until the latch switch closes (one latch point: full wind)."""
+        wind = self.crouch + CORD_OVERSHOOT
+        if self.phase == "plan":
+            self.set_phase("latched" if latched else "reel_in")
+        if self.phase == "reel_in":
+            self.goal, self.torque_on, self.release = wind, True, False
+            if latched or self.time > SWITCH_WIND_MAX:
+                self.set_phase("seat")
+        elif self.phase == "seat":
+            self.torque_on = False
+            if self.time > 0.05:
+                self.set_phase("plan")
+        elif self.phase == "latched":
+            self.torque_on, self.release = False, False
+        elif self.phase == "firing":
+            self.torque_on, self.release = False, True
+            if self.time > MAX_PUSH_TIME:
+                self.set_phase("tucking")
+        elif self.phase == "tucking":
+            self.goal, self.torque_on, self.release = wind, True, False
+            if latched or self.time > SWITCH_TUCK_MAX:
                 self.set_phase("holding")
         elif self.phase == "holding":
             self.torque_on, self.release = False, False

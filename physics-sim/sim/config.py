@@ -3,9 +3,13 @@
 Everything you might want to tweak lives here. Units are SI (m, kg, s, rad, N)
 unless the name says otherwise.
 
-The robot: wind-and-latch rear legs, servo-driven front legs, powered down a
-tether. (Older designs with direct-drive rear legs, passive front legs or a
-battery were dropped; they're in git history before this cleanup.)
+The robot (bunny_v2, the default): all four legs wind-and-latch, each wound by a
+TD-8135MG hobby servo through a rack and held by a latch an MG90D trips, an
+LSM6DS3 IMU, Pololu 1404 rear foot switches, powered down a tether. The earlier
+design with wind-and-latch rear legs and servo-driven front legs is kept as
+latch_tethered_front (and latch_tethered_front_swing): the results in the README
+were run on it. (Older designs with direct-drive rear legs, passive front legs or
+a battery were dropped; they're in git history.)
 
 Body frame convention: x points forward (nose), y points left, z points up.
 The torso origin is the geometric center of the body shell.
@@ -60,6 +64,13 @@ class BunnyDesign:
     # (HAL2-069), which then carries the front hip servo. Angle + = foot forward.
     front_swing: bool = False
     front_swing_range_deg: tuple = (-30.0, 30.0)
+    # "servo": the front legs above, pushed by their hip servo. "latch": built like the rear
+    # legs (thigh + shin on the front_thigh/shin lengths, spring at the hip, pawl, sear),
+    # wound by their own winder; they crouch at the angle that keeps the body level and fire
+    # from the same release timing as the rear.
+    front_drive: str = "servo"
+    front_leg_tilt_deg: float = 0.0  # latch front legs: push axis lean, + = foot behind the shoulder
+    front_latch_spring_stiffness: float = 4.0  # N·m/rad at the front hip (latch front legs)
 
     # --- Servo: Waveshare ST3025 at 12 V (datasheet values) ---
     servo_stall_torque: float = 3.92  # N·m  (40 kg·cm)
@@ -68,6 +79,10 @@ class BunnyDesign:
     servo_kp: float = 25.0  # N·m/rad, internal position loop (guess)
     servo_kd: float = 0.15  # N·m·s/rad (guess)
     servo_armature: float = 0.002  # reflected rotor inertia, kg·m² (guess)
+    # True: bus servos that report their position. False: PWM hobby servos: commands land on
+    # the PCA9685's frames and nothing reads back, so the winders run off latch switches.
+    servo_feedback: bool = True
+    imu: str = "mpu6050"  # "mpu6050" or "lsm6ds3": sets the noise and offsets in hardware.py
 
     # --- Wind-and-latch rear drive ---
     # The servo slowly winds a stiff spring with a cord, a ratchet pawl holds the leg,
@@ -99,8 +114,26 @@ class BunnyDesign:
 DESIGNS = {
     "latch_tethered_front": BunnyDesign(),
     "latch_tethered_front_swing": BunnyDesign(front_swing=True),
+    # The robot as built (CAD "Jumping Robot Version 2"): four rack-and-spring winding modules,
+    # one per leg, each with one latch point at the end of the rack.
+    "bunny_v2": BunnyDesign(
+        front_drive="latch",
+        # TD-8135MG: no datasheet found. Placeholder from the nearest TianKongRC model
+        # (TD-8835MG: 38.5 kg·cm, 0.15 s/60° at 8.4 V); 35 kg·cm class.
+        servo_stall_torque=3.43,  # N·m (35 kg·cm)
+        servo_no_load_speed=6.98,  # rad/s (0.15 s/60°)
+        servo_stall_current=3.5,  # A (guess)
+        servo_feedback=False,
+        imu="lsm6ds3",
+        # Tuned in the sim (24 randomized robots x 3 hops): rear 10 + front 7 with all four sears together
+        # landed 99% at 43 cm; front 0 fell every time; rear 13 peaked at 75%. The airsoft springs' real
+        # rate is unmeasured.
+        latch_spring_stiffness=10.0,
+        front_latch_spring_stiffness=7.0,
+        ratchet_tooth_pitch_deg=53.0,  # one latch point: crouch (65°) to slack (12°) is one tooth
+    ),
 }
-DEFAULT_DESIGN = "latch_tethered_front"
+DEFAULT_DESIGN = "bunny_v2"
 
 
 def model_path(design_name):

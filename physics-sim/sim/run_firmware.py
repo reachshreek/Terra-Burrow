@@ -26,7 +26,7 @@ import time
 import numpy as np
 
 from build_model import build_named
-from config import DEFAULT_DESIGN, DESIGNS, model_path
+from config import DESIGNS, model_path
 from level2_big_hops import variant_name  # importing registers the stiffer-spring variants
 from sim_hal import SimDone, SimHal
 from sweep import make_uncertain_bunny, random_uncertainty
@@ -153,7 +153,9 @@ def robot_design(design, spring, pico_timers, built):
 
 def main():
     parser = argparse.ArgumentParser(description="Run firmware/main.py on a simulated robot.")
-    parser.add_argument("--design", default=DEFAULT_DESIGN, choices=DESIGNS)
+    # shortcut: the firmware mock (drivers.py, sim_hal.py) is still wired for the two-latch robot with
+    # ST3025 bus servos and an MPU-6050; port it before pointing it at bunny_v2.
+    parser.add_argument("--design", default="latch_tethered_front", choices=DESIGNS)
     parser.add_argument("--no-controller", action="store_true", help="BaselineController: no control laws")
     parser.add_argument("--spring", type=float, default=7.0, help="latch spring, N·m/rad at the hip")
     parser.add_argument("--pico-timers", action="store_true", help="release servos on Pico timer pins, not the PCA9685")

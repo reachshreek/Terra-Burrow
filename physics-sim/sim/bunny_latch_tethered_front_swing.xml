@@ -66,6 +66,7 @@
       <body name="front_swing_left" pos="0.1 0.05 -0.03">
         <joint name="front_swing_left" type="hinge" axis="0 -1 0" range="-0.523599 0.523599"
                armature="0.002" damping="0.01"/>
+        <inertial pos="-0.00425 0 0.01275" mass="0.1" fullinertia="1.84729e-05 2.93333e-05 2.07146e-05 0 9.5625e-07 0"/>
         
       <body name="front_leg_left" pos="0 0 0">
         <joint name="front_spring_left" type="slide" axis="0 0 1" range="0 0.03"
@@ -83,12 +84,13 @@
             <geom name="front_foot_left" type="sphere" pos="0 0 -0.045" size="0.012" rgba="0.2 0.2 0.2 1"/>
           </body>
         </body>
-      </body>
+      </body> 
       </body>
       
       <body name="front_swing_right" pos="0.1 -0.05 -0.03">
         <joint name="front_swing_right" type="hinge" axis="0 -1 0" range="-0.523599 0.523599"
                armature="0.002" damping="0.01"/>
+        <inertial pos="-0.00425 0 0.01275" mass="0.1" fullinertia="1.84729e-05 2.93333e-05 2.07146e-05 0 9.5625e-07 0"/>
         
       <body name="front_leg_right" pos="0 0 0">
         <joint name="front_spring_right" type="slide" axis="0 0 1" range="0 0.03"
@@ -106,7 +108,7 @@
             <geom name="front_foot_right" type="sphere" pos="0 0 -0.045" size="0.012" rgba="0.2 0.2 0.2 1"/>
           </body>
         </body>
-      </body>
+      </body> 
       </body>
     </body>
   </worldbody>
@@ -124,20 +126,20 @@
   </equality>
 
   <actuator>
-    <!-- Hip torque from each ST3025, through the winder gears.
+    <!-- Hip torque from each winder servo, through its gears.
          The torque-speed limits are applied in servo.py. -->
     <motor name="servo_left" joint="hip_left" ctrlrange="-10.792 10.792"/>
     <motor name="servo_right" joint="hip_right" ctrlrange="-10.792 10.792"/>
     <!-- Latch-drive springs. legs.py computes the torque from the spring stretch. -->
     <motor name="spring_left" joint="hip_left" ctrlrange="-9.71276 9.71276"/>
     <motor name="spring_right" joint="hip_right" ctrlrange="-9.71276 9.71276"/>
-    <!-- Front-leg ST3025s, direct drive. The torque-speed limits are applied in servo.py. -->
+    <!-- Front-leg servos (hip drive or winder). The torque-speed limits are applied in servo.py. -->
     <motor name="front_servo_left" joint="front_hip_left" ctrlrange="-3.92 3.92"/>
     <motor name="front_servo_right" joint="front_hip_right" ctrlrange="-3.92 3.92"/>
     <motor name="front_swing_servo_left" joint="front_swing_left" ctrlrange="-3.92 3.92"/>
     <motor name="front_swing_servo_right" joint="front_swing_right" ctrlrange="-3.92 3.92"/>
   </actuator>
-  <!-- MPU-6050 (HAL2-008). hardware.py adds its noise, bias and range limits. -->
+  <!-- The IMU (HAL2-008). hardware.py adds its noise, bias and range limits. -->
   <sensor>
     <gyro name="imu_gyro" site="imu"/>
     <accelerometer name="imu_accel" site="imu"/>

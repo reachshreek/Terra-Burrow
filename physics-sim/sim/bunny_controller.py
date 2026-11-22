@@ -43,6 +43,8 @@ from controller.bound_model import best_command, fit_model, possible_pushes
 # Step test (16 robots, Pico timers): upright with a 0 / 15 / 30 ms lead was 100/100/100% at
 # 7 N·m/rad, 100/100/94% at 10, and 31/94/75% at 13. Costs ~20% of distance at 13.
 FRONT_LEAD = 0.05 # s
+# Latch front legs (bunny_v2): their sears trip with the rear. Front 10 ms early: 99% -> 42% upright.
+FRONT_LATCH_LEAD = 0.0  # s
 
 # --- 2. Steered bounding ---
 MAX_TURN_DEG = 20.0  # most body turn asked of one bound hop
@@ -61,6 +63,7 @@ ATTITUDE_WHEN = "landing"  # "landing": from touchdown until the hop is done; "s
 SWING_SLEW = 2.0  # rad/s, how fast the swing base moves while the feet are planted
 SWING_READY = math.radians(3)  # launch only once both swings are this close to their goal
 LOWEST_PUSH = 0.3  # the height loop never asks for less than this
+
 
 @dataclass
 class TurnHop:
@@ -86,6 +89,9 @@ class BunnyController(BaselineController):
         self.raibert_push = None  # height loop's output (None until the first hop of a bound)
 
     # --- 2. Steered bounding ---
+
+    def front_lead(self):
+        return FRONT_LATCH_LEAD if self.design.front_drive == "latch" else FRONT_LEAD
 
     def steering(self):
         return self.bound is not None and self.bound.heading_deg is not None and self.bound_model is not None
@@ -116,10 +122,10 @@ class BunnyController(BaselineController):
         if isinstance(command, TurnHop):
             push_left, push_right, delay = best_command(self.bound_model, self.bound_pushes, command.distance_cm,
                                                         command.turn_deg)
-            return HopPlan(push_left, push_right, delay, front_push=1.0, front_delay=-FRONT_LEAD)
+            return HopPlan(push_left, push_right, delay, front_push=1.0, front_delay=-self.front_lead())
         # 1. Front legs push first
         return HopPlan(command.push_left, command.push_right, command.right_delay, front_push=1.0,
-                       front_delay=-FRONT_LEAD)
+                       front_delay=-self.front_lead())
 
     # --- 3. Raibert-style control ---
 

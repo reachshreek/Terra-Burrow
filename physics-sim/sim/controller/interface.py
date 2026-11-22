@@ -52,12 +52,13 @@ class Inputs:
     servo_position: dict  # servo name -> rad at the joint, as last read back over the bus (None before the first read)
     foot_switch: dict  # "left"/"right" -> True when that rear foot is pressed (HAL2-009)
     command: object = None  # a HopCommand or BoundCommand on the tick it's sent, else None
+    latch_switch: dict = field(default_factory=dict)  # latch leg servo name -> True while its latch holds it fully wound
 
 
 @dataclass
 class Outputs:
     servo: dict  # servo name -> ServoCommand
-    release: dict  # "left"/"right" -> True to trip that leg's sear (latch drive only)
+    release: dict  # "left"/"right" (rear), and "front_left"/"front_right" on latch front legs -> True to trip that sear
     release_delay: dict  # "left"/"right" -> s after this tick to start that trip (sub-tick timing; a PCA9685 still waits for its next frame)
     status: str  # "idle", "starting" (waiting for the first attitude estimate), "winding", "settling", "hopping"
     hops_started: int  # count since power-up

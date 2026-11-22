@@ -11,23 +11,41 @@ import math
 # Sizing helpers for the wind-and-latch mechanism
 # ---------------------------------------------------------------------------
 
-def peak_spring_torque(design):
+def latch_spring(design, leg="rear"):
+    """(stiffness N·m/rad, crouch rad, slack rad) of a wind-and-latch leg: "rear", or "front" on front_drive="latch"."""
+    if leg == "front":
+        from build_model import front_stance_angle  # here: build_model imports this module
+        return (design.front_latch_spring_stiffness, front_stance_angle(design),
+                math.radians(design.front_full_push_angle_deg))
+    return (design.latch_spring_stiffness, math.radians(design.crouch_angle_deg),
+            math.radians(design.latch_spring_slack_angle_deg))
+
+
+def tooth_pitch(design, leg="rear"):
+    """Ratchet tooth pitch (rad). A pitch spanning the whole wind (bunny_v2) is one latch point, on every leg."""
+    _, crouch, slack = latch_spring(design, leg)
+    rear_span = math.radians(design.crouch_angle_deg - design.latch_spring_slack_angle_deg)
+    pitch = math.radians(design.ratchet_tooth_pitch_deg)
+    return crouch - slack if pitch >= rear_span - 1e-9 else pitch
+
+
+def peak_spring_torque(design, leg="rear"):
     """Hip torque from the spring when fully wound into the crouch."""
-    stretch = math.radians(design.crouch_angle_deg - design.latch_spring_slack_angle_deg)
-    return design.latch_spring_stiffness * stretch
+    k, crouch, slack = latch_spring(design, leg)
+    return k * (crouch - slack)
 
 
-def winder_gear_ratio(design):
+def winder_gear_ratio(design, leg="rear"):
     """Servo turns per hip turn, chosen so full wind needs only a fraction of stall torque."""
     usable_servo_torque = design.winder_torque_fraction * design.servo_stall_torque
-    return max(1.0, peak_spring_torque(design) / usable_servo_torque)
+    return max(1.0, peak_spring_torque(design, leg) / usable_servo_torque)
 
 
-def winding_report(design, push=1.0):
+def winding_report(design, push=1.0, leg="rear"):
     """Energy, forces and wind-up time for one leg at a given push."""
-    gear = winder_gear_ratio(design)
-    k = design.latch_spring_stiffness
-    full_stretch = math.radians(design.crouch_angle_deg - design.latch_spring_slack_angle_deg)
+    gear = winder_gear_ratio(design, leg)
+    k, crouch, slack = latch_spring(design, leg)
+    full_stretch = crouch - slack
     stretch = math.sqrt(push) * full_stretch  # push is the fraction of full-wind energy
 
     # Wind from slack to full stretch. At each step the servo's speed drops as

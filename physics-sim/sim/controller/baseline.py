@@ -47,8 +47,13 @@ class BaselineController:
     def __init__(self, design, front_stance_angle=None):
         self.design = design
         self.estimator = Estimator()
+        # Wind-and-latch legs, keyed like Outputs.release: "left"/"right" (rear), "front_left"/"front_right"
         self.legs = {s: LatchLegLogic(design, f"rear_{s}") for s in SIDES}
-        self.front = FrontLegLogic(design, front_stance_angle)
+        self.front = None  # servo front legs only
+        if design.front_drive == "latch":
+            self.legs.update({f"front_{s}": LatchLegLogic(design, f"front_{s}", leg="front") for s in SIDES})
+        else:
+            self.front = FrontLegLogic(design, front_stance_angle)
         self.status = "idle"
         self.time_in_status = 0.0
         self.hops_started = 0
@@ -61,7 +66,7 @@ class BaselineController:
         self.history = []  # finished HopRecords, newest last
         self.hop_time = 0.0  # s since the current hop launched
         self.launch_yaw = 0.0
-        self.release_delay = {s: 0.0 for s in SIDES}
+        self.release_delay = {k: 0.0 for k in self.legs}
         self.waiting_command = None  # a command that arrived before the attitude estimate was ready
         self.bound_hops_done = 0  # hops launched in this bound (a mid-bound update doesn't reset it)
 
@@ -103,19 +108,25 @@ class BaselineController:
         self.plan = self.plan_hop(self.bound_hop() if command is None else command)
         self.legs["left"].prepare(self.plan.push_left)
         self.legs["right"].prepare(self.plan.push_right)
+        for s in SIDES:
+            if f"front_{s}" in self.legs:
+                self.legs[f"front_{s}"].prepare(self.plan.front_push)
         self.set_status("winding")
 
     def launch(self):
         self.plan = self.retime_hop(self.plan)
-        self.release_delay = {s: 0.0 for s in SIDES}
+        self.release_delay = {k: 0.0 for k in self.legs}
         if self.bound:
             self.bound_hops_done += 1
         d = self.plan.right_delay
         # A negative front_delay means the front legs push first: hold both rear releases back instead
         rear_hold = max(0.0, -self.plan.front_delay)
         self.fire_at = {"left": rear_hold + max(0.0, -d), "right": rear_hold + max(0.0, d)}
-        self.fired = {s: False for s in SIDES}
-        self.front.fire(max(0.0, self.plan.front_delay), self.plan.front_push)
+        if self.front:
+            self.front.fire(max(0.0, self.plan.front_delay), self.plan.front_push)
+        elif self.plan.front_push > 0:  # latch front legs: their sears go at front_delay
+            self.fire_at.update({f"front_{s}": max(0.0, self.plan.front_delay) for s in SIDES})
+        self.fired = {k: False for k in self.fire_at}
         self.hops_started += 1
         roll, pitch = self.estimator.roll_pitch()
         self.record = HopRecord(self.plan, launch_pitch=pitch, launch_roll=roll)
@@ -179,7 +190,7 @@ class BaselineController:
             self.start_hop()
 
         if self.status == "winding":
-            ready = all(leg.ready(pos[f"rear_{s}"]) for s, leg in self.legs.items())
+            ready = all(leg.ready(None) for leg in self.legs.values())
             if ready or self.time_in_status > MAX_WIND_TIME:
                 self.set_status("settling")
         if self.status == "settling" and self.ready_to_launch(inputs, bounding=self.bound is not None):
@@ -188,13 +199,13 @@ class BaselineController:
             self.launch()
         if self.status == "hopping":
             self.track_hop(inputs)
-            for s in SIDES:
+            for s in self.fire_at:
                 # Fire in the tick whose window holds the release time, offset to the exact moment
                 if not self.fired[s] and self.fire_at[s] < self.time_in_status + DT - 1e-9:
                     self.legs[s].fire()
                     self.fired[s] = True
                     self.release_delay[s] = max(0.0, self.fire_at[s] - self.time_in_status)
-            legs_done = all(self.fired.values()) and all(leg.done() for leg in self.legs.values())
+            legs_done = all(self.fired.values()) and all(self.legs[s].done() for s in self.fired)
             if self.bound and self.bounds_left > 0 and self.time_in_status > HOP_MAX:
                 self.finish_hop()  # never got both rear feet down (on its side?): stop bounding
                 self.bound = None
@@ -210,11 +221,15 @@ class BaselineController:
                 self.set_status("idle")
 
         servo, release = {}, {}
-        for s, leg in self.legs.items():
-            servo[f"rear_{s}"], release[s] = leg.tick(pos[f"rear_{s}"])
-        goals = self.front.tick(est, {s: pos.get(f"front_{s}") for s in SIDES})
-        for s, command in self.front_leg_goals(goals, inputs).items():
-            servo[f"front_{s}"] = command
+        for key, leg in self.legs.items():
+            name = key if key.startswith("front") else f"rear_{key}"
+            # PWM winders report nothing: the leg winds off its latch switch instead
+            switch = None if self.design.servo_feedback else inputs.latch_switch.get(name, False)
+            servo[name], release[key] = leg.tick(pos.get(name), switch)
+        if self.front:
+            goals = self.front.tick(est, {s: pos.get(f"front_{s}") for s in SIDES})
+            for s, command in self.front_leg_goals(goals, inputs).items():
+                servo[f"front_{s}"] = command
         if self.design.front_swing:
             for s, command in self.front_swing_goals(inputs).items():
                 servo[f"front_swing_{s}"] = command

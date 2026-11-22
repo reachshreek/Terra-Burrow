@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from config import BOM_CSV, DESIGNS, PART_MASSES_CSV, BunnyDesign, model_path
-from legs import peak_spring_torque, winder_gear_ratio
+from legs import latch_spring, peak_spring_torque, winder_gear_ratio
 
 SIDES = {"left": +1, "right": -1}
 
@@ -26,8 +26,10 @@ BUILD_OPTIONS = {"drive": "latch", "front_drive": "servo", "power": "tether"}
 
 
 def build_options(design):
-    """BUILD_OPTIONS plus the ones a design can switch (front_swing=yes/no)."""
-    return {**BUILD_OPTIONS, "front_swing": "yes" if design.front_swing else "no"}
+    """BUILD_OPTIONS plus the ones a design can switch (front_swing, front_drive, winder)."""
+    return {**BUILD_OPTIONS, "front_swing": "yes" if design.front_swing else "no",
+            "front_drive": design.front_drive,
+            "winder": "st3025" if design.servo_feedback else "td8135mg"}
 
 
 # ---------------------------------------------------------------------------
@@ -166,9 +168,9 @@ def crouched_torso_height(design):
 
 
 def front_leg_length(design):
-    """Front leg length that keeps the torso level when crouched."""
+    """Front leg length (along its push axis) that keeps the torso level when crouched."""
     shoulder_height = crouched_torso_height(design) + design.front_shoulder_pos[2]
-    return shoulder_height - design.foot_radius
+    return (shoulder_height - design.foot_radius) / math.cos(math.radians(design.front_leg_tilt_deg))
 
 
 # ---------------------------------------------------------------------------
@@ -191,21 +193,30 @@ def mirror(position, side):
     return (x, SIDES[side] * y, z)
 
 
-def rear_leg_xml(design, bodies, side):
-    hip_min, hip_max = (math.radians(a) for a in design.hip_range_deg)
-    tilt = math.radians(design.rear_leg_tilt_deg)
-    L1, L2 = design.thigh_length, design.shin_length
+def rear_leg_xml(design, bodies, side, front=False):
+    """A coupled-knee thigh + shin on a tilted push axis: the rear legs, or (front=True) a latch front leg."""
+    if front:
+        names, hip, knee = "front", f"front_hip_{side}", f"front_knee_{side}"
+        pos, tilt_deg, (L1, L2), hip_range = (design.front_shoulder_pos, design.front_leg_tilt_deg,
+                                              (design.front_thigh_length, design.front_shin_length),
+                                              design.front_hip_range_deg)
+    else:
+        names, hip, knee = "rear", f"hip_{side}", f"knee_{side}"
+        pos, tilt_deg, (L1, L2), hip_range = (design.rear_hip_pos, design.rear_leg_tilt_deg,
+                                              (design.thigh_length, design.shin_length), design.hip_range_deg)
+    hip_min, hip_max = (math.radians(a) for a in hip_range)
+    tilt = math.radians(tilt_deg)
     return f"""
-      <body name="rear_thigh_{side}" pos="{fmt(mirror(design.rear_hip_pos, side))}" euler="0 {tilt:.6g} 0">
-        <joint name="hip_{side}" type="hinge" axis="0 1 0" range="{hip_min:.6g} {hip_max:.6g}"
+      <body name="{names}_thigh_{side}" pos="{fmt(mirror(pos, side))}" euler="0 {tilt:.6g} 0">
+        <joint name="{hip}" type="hinge" axis="0 1 0" range="{hip_min:.6g} {hip_max:.6g}"
                armature="{design.servo_armature}" damping="0.01"/>
-        {inertial_xml(bodies[f"rear_thigh_{side}"])}
+        {inertial_xml(bodies[f"{names}_thigh_{side}"])}
         <geom type="capsule" fromto="0 0 0 0 0 {-L1}" size="0.008" rgba="0.85 0.85 0.85 1"/>
-        <body name="rear_shin_{side}" pos="0 0 {-L1}">
-          <joint name="knee_{side}" type="hinge" axis="0 1 0" range="-3.1 0.3" damping="0.01"/>
-          {inertial_xml(bodies[f"rear_shin_{side}"])}
+        <body name="{names}_shin_{side}" pos="0 0 {-L1}">
+          <joint name="{knee}" type="hinge" axis="0 1 0" range="-3.1 0.3" damping="0.01"/>
+          {inertial_xml(bodies[f"{names}_shin_{side}"])}
           <geom type="capsule" fromto="0 0 0 0 0 {-L2}" size="0.007" rgba="0.85 0.85 0.85 1"/>
-          <geom name="rear_foot_{side}" type="sphere" pos="0 0 {-L2}" size="{design.foot_radius}" rgba="0.2 0.2 0.2 1"/>
+          <geom name="{names}_foot_{side}" type="sphere" pos="0 0 {-L2}" size="{design.foot_radius}" rgba="0.2 0.2 0.2 1"/>
         </body>
       </body>"""
 
@@ -217,6 +228,8 @@ def front_stance_angle(design):
 
 
 def front_leg_xml(design, bodies, side):
+    if design.front_drive == "latch":
+        return rear_leg_xml(design, bodies, side, front=True)
     length = front_leg_length(design)
     shoulder = fmt(mirror(design.front_shoulder_pos, side))
     strut_pos = "0 0 0" if design.front_swing else shoulder  # with a swing, the strut hangs from the swing bracket
@@ -257,16 +270,23 @@ def front_leg_xml(design, bodies, side):
       </body>"""
 
 
+def latch_legs(design):
+    """(leg, joint, pawl/spring name suffix) for every wind-and-latch leg."""
+    legs = [("rear", f"hip_{side}", side) for side in SIDES]
+    if design.front_drive == "latch":
+        legs += [("front", f"front_hip_{side}", f"front_{side}") for side in SIDES]
+    return legs
+
+
 def latch_xml(design):
     """Extra equality constraints and actuators for the wind-and-latch drive."""
-    crouch = math.radians(design.crouch_angle_deg)
-    spring_limit = 1.5 * peak_spring_torque(design)
-    pawls = "\n".join(
-        f'    <joint name="latch_{side}" joint1="hip_{side}" polycoef="{crouch:.6g} 0 0 0 0" solref="0.002 1"/>'
-        for side in SIDES)
-    springs = "\n".join(
-        f'    <motor name="spring_{side}" joint="hip_{side}" ctrlrange="{-spring_limit:.6g} {spring_limit:.6g}"/>'
-        for side in SIDES)
+    pawls, springs = [], []
+    for leg, joint, name in latch_legs(design):
+        _, crouch, _ = latch_spring(design, leg)
+        spring_limit = 1.5 * peak_spring_torque(design, leg)
+        pawls.append(f'    <joint name="latch_{name}" joint1="{joint}" polycoef="{crouch:.6g} 0 0 0 0" solref="0.002 1"/>')
+        springs.append(f'    <motor name="spring_{name}" joint="{joint}" ctrlrange="{-spring_limit:.6g} {spring_limit:.6g}"/>')
+    pawls, springs = "\n".join(pawls), "\n".join(springs)
     return (f"""
     <!-- Ratchet pawls: lock each hip where it caught. legs.py switches them on and off. -->
 {pawls}""", f"""
@@ -275,7 +295,7 @@ def latch_xml(design):
 
 
 IMU_XML = """
-  <!-- MPU-6050 (HAL2-008). hardware.py adds its noise, bias and range limits. -->
+  <!-- The IMU (HAL2-008). hardware.py adds its noise, bias and range limits. -->
   <sensor>
     <gyro name="imu_gyro" site="imu"/>
     <accelerometer name="imu_accel" site="imu"/>
@@ -287,9 +307,10 @@ def front_drive_xml(design):
     knees = "\n".join(
         f'    <joint joint1="front_knee_{side}" joint2="front_hip_{side}" polycoef="0 -2 0 0 0" solref="0.002 1"/>'
         for side in SIDES)
+    # Latch front legs: the winder, through its gears. Servo front legs: direct drive.
+    limit = design.servo_stall_torque * (winder_gear_ratio(design, "front") if design.front_drive == "latch" else 1.0)
     servos = "\n".join(
-        f'    <motor name="front_servo_{side}" joint="front_hip_{side}" '
-        f'ctrlrange="{-design.servo_stall_torque:.6g} {design.servo_stall_torque:.6g}"/>'
+        f'    <motor name="front_servo_{side}" joint="front_hip_{side}" ctrlrange="{-limit:.6g} {limit:.6g}"/>'
         for side in SIDES)
     if design.front_swing:
         servos += "\n" + "\n".join(
@@ -299,7 +320,7 @@ def front_drive_xml(design):
     return f"""
     <!-- Front-leg linkages, like the rear: knee angle = -2 x hip angle. -->
 {knees}""", f"""
-    <!-- Front-leg ST3025s, direct drive. The torque-speed limits are applied in servo.py. -->
+    <!-- Front-leg servos (hip drive or winder). The torque-speed limits are applied in servo.py. -->
 {servos}"""
 
 
@@ -309,7 +330,7 @@ def build_mjcf(design: BunnyDesign, bodies):
     # Keyframe qpos: torso position + quaternion, then each joint in tree order:
     # left hip, left knee, right hip, right knee, then each front leg's (swing,) slide, hip and knee.
     stance = front_stance_angle(design)
-    front_qpos = ([0] if design.front_swing else []) + [0, stance, -2 * stance]
+    front_qpos = ([0] if design.front_swing else []) + ([] if design.front_drive == "latch" else [0]) + [stance, -2 * stance]
     crouch_qpos = [0, 0, start_height, 1, 0, 0, 0,
                    crouch, -2 * crouch, crouch, -2 * crouch, *front_qpos * 2]
     hip_torque_limit = design.servo_stall_torque * winder_gear_ratio(design)
@@ -368,7 +389,7 @@ def build_mjcf(design: BunnyDesign, bodies):
   </equality>
 
   <actuator>
-    <!-- Hip torque from each ST3025, through the winder gears.
+    <!-- Hip torque from each winder servo, through its gears.
          The torque-speed limits are applied in servo.py. -->
     <motor name="servo_left" joint="hip_left" ctrlrange="{-hip_torque_limit:.6g} {hip_torque_limit:.6g}"/>
     <motor name="servo_right" joint="hip_right" ctrlrange="{-hip_torque_limit:.6g} {hip_torque_limit:.6g}"/>{spring_actuators}{front_servos}
