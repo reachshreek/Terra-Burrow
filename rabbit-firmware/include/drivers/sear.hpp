@@ -5,10 +5,9 @@
 // MG90D pulling one leg's latch pin. arm() holds the latch, trip() releases the spring.
 //
 // A PWM pin only takes a new pulse width at the start of its next 20 ms period, so trip()
-// also restarts the slice counter to start the trip pulse right now. That restarts the
-// other pin on the same slice too (one glitched frame, harmless for a servo holding still),
-// but two sears that need *different* trip times must be on different slices
-// (slice = (gpio / 2) % 8, so GP14 and GP15 are both slice 7).
+// also restarts the slice counter to start the trip pulse right now. That restart can
+// stretch the other pin on the same slice into one long (~3 ms) pulse, which could twitch
+// an armed sear open - so give every sear a PWM slice to itself (see the pin map).
 class Sear : public Servo {
     public:
         // armed_us / trip_us: placeholders from the sim, calibrate per servo on the bench.

@@ -2,9 +2,13 @@
 
 ## System Overview
 
-The Halo Bunny robot uses a Raspberry Pi for computer vision
-and high-level processing, while a microcontroller handles
-real-time motor control, sensor feedback, and jumping.
+The Halo Bunny robot uses a Raspberry Pi for computer vision, audio
+and high-level behaviour, while a Raspberry Pi Pico (RP2040) handles real-time
+jump control: winding, latching, releasing, and the face servos.
+
+Each of the four legs is wind-and-latch: a winder servo pulls the leg in
+against its spring until a latch catches (confirmed by a latch switch), and
+a small sear servo trips the latch to release the jump.
 
 ## Electrical Architecture
 
@@ -22,51 +26,47 @@ flowchart TB
 
     REG1["Pololu 2851<br/>5V 5A Computing Regulator"]
 
-    REG2["5V 5A Servo Regulator<br/>(Model TBD)"]
+    REG2["Servo Regulator<br/>(Model TBD)"]
+
+    VDIV["Battery Voltage Divider"]
 
     %% =========================
     %% COMPUTING
     %% =========================
-    RPI["Raspberry Pi 5 4GB<br/>CV/AI/Planning"]
+    RPI["Raspberry Pi 5 4GB<br/>CV / Audio / Behaviour"]
 
-    MCU["Raspberry Pi Pico 2<br/>Real-Time Jump Control"]
+    MCU["Raspberry Pi Pico (RP2040)<br/>Real-Time Jump + Face Control"]
 
     SD["32GB microSD Card<br/>RPI Operating System"]
 
     %% =========================
     %% SENSORS
     %% =========================
-    IMU["Adafruit LSM6DSO32<br/>6-DOF IMU"]
+    IMU["LSM6DS3-family 6-DOF IMU<br/>(confirm exact part)"]
 
-    FOOT["Pololu 1404<br/>Foot Contact Switches x2"]
+    FOOT["Pololu 1404<br/>Rear Foot Switches x2"]
 
-    HOME["Pololu 1528<br/>Winding Home Switch"]
+    LATCHSW["Pololu 1528<br/>Latch Engaged Switches x4"]
 
-    LIMIT["Pololu 1528<br/>Fully Wound Limit Switch"]
-
-    LATCHSW["Pololu 1528<br/>Latch Engaged Switch"]
+    MIC["ReSpeaker XVF3800<br/>4-Mic Array"]
 
     %% =========================
     %% SAFETY
     %% =========================
-    ARM["Independent Latch Release<br/>Arming Switch"]
+    ARM["Latch Release<br/>Arming Switch"]
 
     %% =========================
-    %% ACTUATORS - TBD
+    %% ACTUATORS
     %% =========================
-    DRIVER["Winding Motor Driver(s)"]
+    WIND["TD-8135MG Winders x4<br/>(continuous rotation)"]
 
-    WIND["1-2 Rear-Leg<br/>Winding Motors"]
+    SEAR["MG90D Sear Servos x4<br/>(latch release)"]
 
-    LATCHDRV["Latch Release<br/>Driver / Interface"]
+    PCA["PCA9685<br/>16-ch Servo Driver"]
 
-    LATCH["Latch Release<br/>Servo / Solenoid"]
+    EARS["MG90S Ear / Eye Servos"]
 
-    FRONTDRV["Front-Leg Actuator<br/>Driver / Interface"]
-
-    FRONT["Optional Front-Leg<br/>Actuators x2"]
-
-    EXPRESS["Ear / Face Servos"]
+    HEAD["Head Servos x2"]
 
     %% =========================
     %% POWER CONNECTIONS
@@ -78,13 +78,11 @@ flowchart TB
     REG1 --> RPI
 
     PD --> REG2
-    REG2 --> EXPRESS
+    REG2 --> WIND
+    REG2 --> SEAR
+    REG2 -->|"V+"| PCA
 
-    PD --> DRIVER
-    PD --> FRONTDRV
-
-    REG2 -.->|"If 5V Servo Latch"| LATCHDRV
-    PD -.->|"If Solenoid - Matched Supply"| LATCHDRV
+    PD --> VDIV
 
     %% =========================
     %% COMPUTER COMMUNICATION
@@ -93,33 +91,31 @@ flowchart TB
 
     RPI <-->|"USB Serial + Pico Power"| MCU
 
+    MIC -->|"USB"| RPI
+
     %% =========================
     %% SENSOR CONNECTIONS
     %% =========================
-    IMU -->|"I2C"| MCU
+    IMU -->|"I2C0"| MCU
 
-    FOOT -->|"Digital GPIO"| MCU
+    FOOT -->|"GPIO"| MCU
 
-    HOME -->|"Digital GPIO"| MCU
+    LATCHSW -->|"GPIO"| MCU
 
-    LIMIT -->|"Digital GPIO"| MCU
+    ARM -->|"GPIO"| MCU
 
-    LATCHSW -->|"Digital GPIO"| MCU
+    VDIV -->|"ADC0"| MCU
 
     %% =========================
     %% ACTUATOR CONTROL
     %% =========================
-    MCU -->|"Motor Commands"| DRIVER
-    DRIVER --> WIND
+    MCU -->|"PWM"| WIND
 
-    MCU -->|"Release Command"| LATCHDRV
-    ARM -->|"Hardware Release Enable"| LATCHDRV
-    LATCHDRV --> LATCH
+    MCU -->|"PWM"| SEAR
 
-    MCU -->|"Position Commands"| FRONTDRV
-    FRONTDRV --> FRONT
-
-    MCU -->|"PWM Signals"| EXPRESS
+    MCU -->|"I2C0"| PCA
+    PCA --> EARS
+    PCA --> HEAD
 
     %% =========================
     %% COLOR STYLING
@@ -132,10 +128,10 @@ flowchart TB
     classDef pending fill:#e5e7eb,stroke:#6b7280,color:#374151
 
     class RPI,MCU,SD computer
-    class BAT,UV,REG1,REG2 power
-    class IMU,FOOT,HOME,LIMIT,LATCHSW sensor
+    class BAT,UV,REG1,REG2,VDIV power
+    class IMU,FOOT,LATCHSW,MIC sensor
     class ARM safety
-    class DRIVER,WIND,LATCHDRV,LATCH,FRONTDRV,FRONT,EXPRESS actuator
+    class WIND,SEAR,PCA,EARS,HEAD actuator
     class PD pending
 
 ```
@@ -144,40 +140,56 @@ flowchart TB
 
 | Subsystem | Component | Purpose |
 |---|---|---|
-| Computing | Raspberry Pi | Computer vision, AI, high-level planning |
-| Control | Microcontroller | Real-time motor and sensor control |
+| Computing | Raspberry Pi 5 | Computer vision, audio, behaviour, high-level commands |
+| Control | Raspberry Pi Pico (RP2040) | Real-time winding, latching, release, face servos |
 | Power | 3S LiPo Battery | Main power source |
 | Power | Regulators / Fuses / E-Stop | Power distribution and electrical protection |
-| Jumping | Winding Motor | Compresses springs to store energy |
-| Jumping | Motor Driver | Controls winding motor |
-| Jumping | Latch Actuator | Releases stored spring energy |
-| Movement | Front-Leg Actuators | Optional landing and posture control |
-| Expression | Ear / Face Servos | Animatronic movement |
-| Sensors | IMU | Detects acceleration and rotation |
-| Sensors | Limit Switches | Detect winding limits |
-| Sensors | Latch Sensor | Confirms latch engagement |
-| Sensors | Foot Sensors | Detects ground contact |
+| Power | Battery Voltage Divider | Lets the Pico measure battery voltage (ADC0) |
+| Jumping | TD-8135MG Winders x4 | Wind each leg's spring until it latches |
+| Jumping | MG90D Sears x4 | Trip each leg's latch to release the spring |
+| Expression | PCA9685 + MG90S servos | Ears and eyes |
+| Expression | PCA9685 + head servos x2 | Head pan / tilt |
+| Sensors | IMU | Attitude, liftoff and touchdown detection |
+| Sensors | Latch Switches x4 | Confirm each leg is wound and latched |
+| Sensors | Foot Switches x2 | Rear-foot ground contact |
+| Sensors | ReSpeaker XVF3800 | Voice direction and audio (to the Pi) |
+| Safety | Arming Switch | Firmware refuses to release unless armed |
+
+## Pico Pin Map
+
+Source of truth: `rabbit-firmware/include/rabbit-firmware.hpp`.
+
+| Function | Pins |
+|---|---|
+| Sears (RL, RR, FL, FR) | GP2, GP4, GP6, GP10 (each on its own PWM slice) |
+| Latch switches (RL, RR, FL, FR) | GP3, GP5, GP7, GP11 |
+| I2C0 SDA / SCL (IMU, PCA9685 @ 0x40) | GP8 / GP9 |
+| Winders (RL, RR, FL, FR) | GP12, GP13, GP14, GP15 |
+| Foot switches (RL, RR) | GP16, GP17 |
+| Arming switch | GP18 |
+| Battery voltage (ADC0) | GP26 |
+| Free | GP0–1 (UART0 debug), GP19–22, GP27–28 |
 
 ## Control Sequence
 
-1. **Idle:** Check sensors and safety conditions.
-2. **Wind:** Activate winding motors to compress springs.
-3. **Latch:** Confirm the mechanical latch is engaged.
-4. **Ready:** Wait for an authorized jump command.
-5. **Release:** Activate latch release actuator.
-6. **Flight:** Monitor orientation using the IMU.
-7. **Landing:** Detect foot contact.
-8. **Recovery:** Reset for the next jump.
+1. **Idle:** Check sensors, battery and the arming switch.
+2. **Wind:** Run each winder until its latch switch closes, then stop it.
+3. **Ready:** All four latch switches closed; wait for a jump command from the Pi.
+4. **Release:** If armed, trip the four sears (rear left/right offset sets the turn).
+5. **Flight:** Hold the head still; track attitude with the IMU.
+6. **Landing:** Detect touchdown from the foot switches or an IMU acceleration spike.
+7. **Recovery:** Settle, then wind again for the next hop.
 
 ## Important Design Notes
 
-- Raspberry Pi handles high-level computing.
-- Microcontroller handles real-time control.
-- Motor drivers supply actuator current.
-- Voltage regulators provide appropriate supply voltages.
-- Sensors send feedback to the microcontroller.
+- Raspberry Pi handles vision, audio and behaviour; the Pico handles real-time control.
+- Every sear needs its own PWM slice: releasing restarts the slice's counter, which would glitch any other servo on it.
+- Servo current: four winders stalling at once can draw well over 5 A. Size the servo regulator for it, or wind the legs one or two at a time.
+- The face and head servos share the servo rail; rate-limit their moves so they don't stall together.
+- All grounds (battery, both regulators, Pi, Pico, servos) must be common.
 - The mechanical latch must remain secure if electrical power is lost.
 - An emergency stop removes actuator power but does not remove stored spring energy.
+- Front-leg hip actuators are not currently planned.
 
 **Note:** This is a functional block diagram, not a complete
 electrical wiring schematic. Actual voltage rails, current

@@ -21,9 +21,11 @@ class IMU {
         bool init();
         bool readRaw();
         bool dataReady();
+        bool calibrate();
 
         float gyro_raw[3];
         float accel_raw[3];
+        float gyro_bias[3] = {0, 0, 0};
 
     private:
         bool whoami();

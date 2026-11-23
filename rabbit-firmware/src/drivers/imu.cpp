@@ -1,3 +1,5 @@
+// DATASHEET https://datasheet.octopart.com/LSM6DS3-STMicroelectronics-datasheet-30900210.pdf
+
 #include "drivers/imu.hpp"
 #include "rabbit-firmware.hpp"
 #include <pico/time.h>
@@ -10,7 +12,7 @@ bool IMU::init() {
 
     if (!whoami()) return false;
 
-    uint8_t xl[2] = {Register::CTRL1_XL, 0x74};  // CTRL1_XL: 833 Hz, ±4 g
+    uint8_t xl[2] = {Register::CTRL1_XL, 0x74};  // CTRL1_XL: 833 Hz, ±16 g (FS_XL = 01)
     writei2c(IMU_ADDR, xl, 2, false);
 
     uint8_t g[2] = {Register::CTRL2_G, 0x7C};   // CTRL2_G: 833 Hz, ±2000 dps
@@ -46,6 +48,37 @@ bool IMU::readRaw() {
         gyro_raw[i] = (int16_t)(b[2 * i] | (b[2 * i + 1] << 8));
         accel_raw[i] = (int16_t)(b[6 + 2 * i] | (b[7 + 2 * i] << 8));
     }
+
+    return true;
+}
+
+// BLOCKING!@!
+bool IMU::calibrate() {
+    float ax = 0, ay = 0, az = 0;
+    int totalSamples = 0; 
+
+    // 2 seconds calibration
+    auto start = get_absolute_time();
+    while (totalSamples < 100) {
+        if (!dataReady()) {
+            sleep_ms(20);
+            if (get_absolute_time() - start > 2000) return false;
+            continue;
+        }
+        readRaw();
+
+        ax += gyro_raw[0];
+        ay += gyro_raw[1];
+        az += gyro_raw[2];
+
+        totalSamples++;
+
+        sleep_ms(20);
+    }
+
+    gyro_bias[0] = ax / totalSamples;
+    gyro_bias[1] = ay / totalSamples;
+    gyro_bias[2] = az / totalSamples;
 
     return true;
 }

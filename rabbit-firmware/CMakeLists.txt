@@ -35,7 +35,8 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(rabbit-firmware src/rabbit-firmware.cpp src/i2c.cpp src/drivers/imu.cpp src/drivers/servo.cpp src/drivers/winder.cpp src/drivers/sear.cpp src/drivers/switch.cpp)
+add_executable(rabbit-firmware src/rabbit-firmware.cpp src/i2c.cpp src/drivers/imu.cpp src/drivers/servo.cpp src/drivers/winder.cpp src/drivers/sear.cpp src/drivers/switch.cpp
+    src/estimator.cpp src/drivers/battery.cpp)
 
 pico_set_program_name(rabbit-firmware "rabbit-firmware")
 pico_set_program_version(rabbit-firmware "0.1")
@@ -57,6 +58,7 @@ target_include_directories(rabbit-firmware PRIVATE
 target_link_libraries(rabbit-firmware 
         hardware_i2c
         hardware_pwm
+        hardware_adc
         )
 
 pico_add_extra_outputs(rabbit-firmware)
