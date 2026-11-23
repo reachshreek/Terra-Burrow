@@ -36,7 +36,7 @@ pico_sdk_init()
 # Add executable. Default name is the project name, version 0.1
 
 add_executable(rabbit-firmware src/rabbit-firmware.cpp src/i2c.cpp src/drivers/imu.cpp src/drivers/servo.cpp src/drivers/winder.cpp src/drivers/sear.cpp src/drivers/switch.cpp
-    src/estimator.cpp src/drivers/battery.cpp)
+    src/estimator.cpp src/drivers/battery.cpp src/drivers/pca9685.cpp src/drivers/face_servo.cpp)
 
 pico_set_program_name(rabbit-firmware "rabbit-firmware")
 pico_set_program_version(rabbit-firmware "0.1")
@@ -62,4 +62,13 @@ target_link_libraries(rabbit-firmware
         )
 
 pico_add_extra_outputs(rabbit-firmware)
+
+# Servo + switch calibration tool: flash build/rabbit-calibrate.uf2 instead of the main firmware.
+add_executable(rabbit-calibrate src/calibrate.cpp src/i2c.cpp src/drivers/servo.cpp
+    src/drivers/switch.cpp src/drivers/pca9685.cpp)
+pico_enable_stdio_uart(rabbit-calibrate 0)
+pico_enable_stdio_usb(rabbit-calibrate 1)
+target_include_directories(rabbit-calibrate PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include)
+target_link_libraries(rabbit-calibrate pico_stdlib hardware_i2c hardware_pwm)
+pico_add_extra_outputs(rabbit-calibrate)
 
