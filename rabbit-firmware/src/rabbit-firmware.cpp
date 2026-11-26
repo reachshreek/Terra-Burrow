@@ -3,6 +3,7 @@
 #include "drivers/battery.hpp"
 #include "drivers/imu.hpp"
 #include "drivers/servo.hpp"
+#include "estimator.hpp"
 #include <hardware/i2c.h>
 #include <pico/time.h>
 
@@ -38,6 +39,11 @@ int main() {
     imu.calibrate();
     printf("IMU calibration done\n");
 
+    AttitudeEstimator att;
+    float a0[3];
+    for (int i = 0; i < 3; i++) a0[i] = imu.accel_raw[i] * 0.000488f * 9.80665f;  // last sample from calibrate()
+    att.init(a0);
+
     auto next = get_absolute_time();
     uint32_t tick = 0;
     while (true) {
@@ -48,12 +54,14 @@ int main() {
             accel_ms2[i] = imu.accel_raw[i] * 0.000488f * 9.80665f  /* ±16 g: 0.488 mg/LSB */;
         }
         
+        att.update(gyro_r, accel_ms2, 0.005f);
+
         next = delayed_by_ms(next, 5);
         sleep_until(next);
 
         if (++tick % 40 == 0)  // print at 5 Hz, the loop runs at 200 Hz
-        printf("gyro %+7.3f %+7.3f %+7.3f rad/s | accel %+7.2f %+7.2f %+7.2f m/s2\n",
-            gyro_r[0], gyro_r[1], gyro_r[2],
+        printf("roll %+7.1f pitch %+7.1f yaw %+7.1f deg | accel %+7.2f %+7.2f %+7.2f m/s2\n",
+            att.roll() * 57.2958f, att.pitch() * 57.2958f, att.yaw() * 57.2958f,
             accel_ms2[0], accel_ms2[1], accel_ms2[2]);
     }
 
