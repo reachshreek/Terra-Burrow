@@ -62,7 +62,7 @@ bool IMU::calibrate() {
     while (totalSamples < 100) {
         if (!dataReady()) {
             sleep_ms(20);
-            if (get_absolute_time() - start > 2000) return false;
+            if (absolute_time_diff_us(start, get_absolute_time()) > 3000000) return false;  // 3 s: 100 samples x 20 ms needs ~2 s
             continue;
         }
         readRaw();
@@ -79,6 +79,9 @@ bool IMU::calibrate() {
     gyro_bias[0] = ax / totalSamples;
     gyro_bias[1] = ay / totalSamples;
     gyro_bias[2] = az / totalSamples;
+
+    printf("IMU calibration: gyro_bias: %.3f %.3f %.3f\n",
+        gyro_bias[0], gyro_bias[1], gyro_bias[2]);
 
     return true;
 }

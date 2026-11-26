@@ -2,7 +2,7 @@
 
 #include "hardware/i2c.h"
 
-const uint8_t IMU_ADDR = 0x6A;
+const uint8_t IMU_ADDR = 0x6B;  // SA0 high on this board
 
 class IMU {
     public:
@@ -27,6 +27,5 @@ class IMU {
         float accel_raw[3];
         float gyro_bias[3] = {0, 0, 0};
 
-    private:
         bool whoami();
 };
